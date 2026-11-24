@@ -1,0 +1,5 @@
+Stimmen: erzeugt mit Piper (neuronale Sprachsynthese, MIT-Lizenz).
+- Thorsten (thorsten-high, thorsten_emotional) – Thorsten Müller, CC0
+- Kerstin – rhasspy/dataset-voice-kerstin, CC0
+- Ramona, Eva K., Karlsson – M-AILABS Speech Dataset (caito.de), Nutzung mit Quellenangabe
+Funkfilter und Tonhöhen-Varianten im Spiel bzw. per Rubberband.

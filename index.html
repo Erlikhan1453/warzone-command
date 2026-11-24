@@ -20,10 +20,10 @@
   --side:clamp(180px,22vw,240px);
   color-scheme:dark;
 }
-html{height:100%;box-sizing:border-box;background:var(--bg)}
+html{height:100%;box-sizing:border-box;background:var(--bg);-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:pan-x pan-y}
 *,*::before,*::after{box-sizing:border-box}
 [hidden]{display:none!important}
-body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden;
+body{height:100%;margin:0;touch-action:pan-x pan-y;overscroll-behavior:none;background:var(--bg);color:var(--fg);font-family:var(--body);overflow:hidden;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;touch-action:manipulation;cursor:pointer}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -195,14 +195,27 @@ body.cine #panel,body.cine #hud,body.cine #selinfo,body.cine #toast,body.cine #p
 #introOv.out{opacity:0;transition:opacity .6s}
 @media (prefers-reduced-motion:reduce){#introOv::before,#introOv::after{animation-duration:.01s}#inTitle b{animation:none}}
 
+/* map zoom buttons + menu toggle (pinching the page itself is blocked) */
+#zoomBar{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:3}
+#zoomBar button{width:40px;height:40px;padding:0;display:flex;align-items:center;justify-content:center;font:700 19px var(--display);line-height:1}
+#zoomBar #menuBtn{font-size:17px}
+body.menuMin #menuBtn{border-color:var(--accent);color:var(--accent)}
+body.menuMin #app{grid-template-columns:100%!important;grid-template-rows:100%!important}
+body.menuMin #panel{display:none!important}
+body.cine #zoomBar{display:none!important}
+@media (orientation:portrait){#zoomBar{top:auto;bottom:12px;transform:none}
+  #panel{grid-template-columns:86px 1fr;gap:5px}
+  .bb{flex:0 0 74px}.bb .nm{font-size:9.5px}.bb .ds{display:none}
+  .stat{padding:2px 6px}.stat b{font-size:13px}
+  #hud{gap:4px}#hud .chip{padding:4px 7px;font-size:11px}}
 /* touch comfort */
 @media (pointer:coarse){
   .chip{min-height:34px;padding:7px 11px}
   #selinfo button{min-height:36px;padding:0 12px}
 }
 @media (pointer:coarse) and (orientation:portrait){
-  .acts button{min-height:38px}
-  .tabs button{min-height:34px}
+  .acts button{min-height:34px;padding:4px 2px}
+  .tabs button{min-height:32px}
 }
 </style>
 </head>
@@ -230,6 +243,7 @@ body.cine #panel,body.cine #hud,body.cine #selinfo,body.cine #toast,body.cine #p
       <div id="inTitle"><b>WARZONE COMMAND</b><span>Einsatz beginnt</span></div>
       <div id="inBot"><div id="inTxt"></div><button type="button" id="introSkip">Überspringen ›</button></div>
     </div>
+    <div id="zoomBar"><button class="chip" id="zoomInBtn" type="button" aria-label="Karte vergrössern">+</button><button class="chip" id="zoomOutBtn" type="button" aria-label="Karte verkleinern">−</button><button class="chip" id="menuBtn" type="button" aria-label="Menü ein- oder ausblenden" aria-pressed="false">☰</button></div>
     <div id="toast" hidden></div>
     <div id="placebar" hidden><span id="placeTxt">Tippe auf ein freies Feld nahe deiner Basis.</span><button id="placeCancel" type="button">Abbrechen</button></div>
     <div id="selinfo" hidden></div>
@@ -2319,7 +2333,17 @@ view.addEventListener('pointerup',endPtr);view.addEventListener('pointercancel',
 view.addEventListener('pointerleave',()=>{if(G)G.mouse=null});
 view.addEventListener('contextmenu',e=>e.preventDefault());
 view.addEventListener('wheel',e=>{e.preventDefault();if(!G)return;const p=local(e);zoomAt(p.x,p.y,cam.z*Math.exp(e.deltaY*.0012))},{passive:false});
-document.addEventListener('gesturestart',e=>e.preventDefault());
+// iPhone: never let the page itself zoom (Safari ignores user-scalable=no); map zoom stays on pinch inside the battlefield
+for(const t of ['gesturestart','gesturechange','gestureend'])document.addEventListener(t,e=>e.preventDefault(),{passive:false});
+document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1||e.scale!==undefined&&e.scale!==1)e.preventDefault()},{passive:false});
+let zoomFixT=0;function fixPageZoom(){const vv=window.visualViewport,m=document.querySelector('meta[name=viewport]');if(!vv||!m||vv.scale<=1.01)return;const c=m.content;
+  m.content='width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';setTimeout(()=>{m.content=c;window.scrollTo(0,0);resize()},80)}
+if(window.visualViewport)visualViewport.addEventListener('resize',()=>{clearTimeout(zoomFixT);zoomFixT=setTimeout(fixPageZoom,300)});
+window.addEventListener('scroll',()=>{if(window.scrollY||window.scrollX)window.scrollTo(0,0)});
+$('#zoomInBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomAt(vw/2,vh/2,cam.z*.72)}};
+$('#zoomOutBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomAt(vw/2,vh/2,cam.z/.72)}};
+const setMenu=min=>{document.body.classList.toggle('menuMin',min);$('#menuBtn').setAttribute('aria-pressed',min);resize();try{localStorage.setItem('wzc-menu',min?'min':'full')}catch(e){}};
+$('#menuBtn').onclick=e=>{e.stopPropagation();setMenu(!document.body.classList.contains('menuMin'))};
 const keys=new Set();
 window.addEventListener('keydown',e=>{if(!G||G.over)return;const k=e.key.toLowerCase();keys.add(k);
   if(e.key==='Escape'){if(G.target){G.target=null;refreshUI(true)}else if(G.placing)stopPlacing();else if(G.amMode)setAm(false);else{G.sel=[];G.selB=null;refreshUI(true)}}
@@ -2797,7 +2821,41 @@ const TYPEIDX={};function unitVoice(u){const g=VO.good&&VO.good.length?VO.good:n
   if(TYPEIDX[u.type]===undefined){let h=0;for(const ch of u.type)h=(h*31+ch.charCodeAt(0))>>>0;TYPEIDX[u.type]=h}return g[(TYPEIDX[u.type]+(u.d.armor==='inf'?(u.vseed||0):0))%g.length]}
 function voiceFor(c,seed){const list=VO.voices[c.lang]||(c.alt?VO.voices[c.alt]:null)||VO.voices[c.lang.slice(0,2)];if(!list||!list.length)return null;return list[seed%list.length]}
 if(window.speechSynthesis){speechSynthesis.onvoiceschanged=()=>{VO.voice=pickVoice()}}
-function voiceUnlock(){try{if(!window.speechSynthesis)return;VO.voice=pickVoice();const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}catch(e){}}
+function voiceUnlock(){try{clipInit()}catch(e){}try{if(!window.speechSynthesis)return;VO.voice=pickVoice();const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}catch(e){}}
+
+// ---------- pre-rendered voice clips (neural TTS, 8 unit voices m/f, announcer, narrator), played through a radio filter ----------
+const CLIP={meta:null,buf:{},bad:{},q:[],cur:null,req:0,failed:false,src:null,chain:null,until:0,base:(window.WZC_VO||'vo/')};
+const UV=['m1','m2','m3','m4','f1','f2','f3','f4'];
+function clipInit(){if(CLIP.req||!SND.ctx)return;CLIP.req=1;
+  fetch(CLIP.base+'vo.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{CLIP.meta=j;for(const v of ['nar','ann',...UV])clipLoad(v)}).catch(()=>{CLIP.failed=true})}
+function clipLoad(id,front){if(!CLIP.meta||!CLIP.meta.v[id]||CLIP.buf[id]||CLIP.bad[id]||CLIP.cur===id)return;const i=CLIP.q.indexOf(id);
+  if(i>=0){if(!front)return;CLIP.q.splice(i,1)}if(front)CLIP.q.unshift(id);else CLIP.q.push(id);clipPump()}
+function clipPump(){if(CLIP.cur||!CLIP.q.length||!SND.ctx)return;const id=CLIP.cur=CLIP.q.shift();
+  fetch(CLIP.base+id+'.mp3').then(r=>{if(!r.ok)throw 0;return r.arrayBuffer()}).then(clipDecode).then(b=>{CLIP.buf[id]=b}).catch(()=>{CLIP.bad[id]=1}).then(()=>{CLIP.cur=null;clipPump()})}
+// decode at 16 kHz where possible (a quarter of the memory of a 48 kHz decode)
+function clipDecode(a){const copy=a.slice(0);
+  const dec=(c,buf)=>new Promise((res,rej)=>{let done=0;const ok=b=>{if(!done){done=1;res(b)}},no=e=>{if(!done){done=1;rej(e)}};try{const p=c.decodeAudioData(buf,ok,no);if(p&&p.then)p.then(ok,no)}catch(e){no(e)}});
+  let oc=null;try{const O=window.OfflineAudioContext;if(O)oc=new O(1,16000,16000)}catch(e){oc=null}
+  return oc?dec(oc,a).catch(()=>dec(SND.ctx,copy)):dec(SND.ctx,copy)}
+function clipChain(){if(CLIP.chain)return CLIP.chain;const c=SND.ctx,hp=c.createBiquadFilter(),pk=c.createBiquadFilter(),ws=c.createWaveShaper(),lp=c.createBiquadFilter(),g=c.createGain();
+  hp.type='highpass';hp.frequency.value=330;hp.Q.value=.7;pk.type='peaking';pk.frequency.value=1700;pk.Q.value=.9;pk.gain.value=5;lp.type='lowpass';lp.frequency.value=3500;lp.Q.value=.9;
+  const n=1024,cu=new Float32Array(n);for(let i=0;i<n;i++){const x=i/(n-1)*2-1;cu[i]=Math.tanh(x*2)/Math.tanh(2)}ws.curve=cu;g.gain.value=1.35;
+  hp.connect(pk);pk.connect(ws);ws.connect(lp);lp.connect(g);g.connect(SND.out||c.destination);CLIP.chain=hp;return hp}
+const clipBusy=()=>performance.now()<CLIP.until;
+function clipStop(){if(CLIP.src){try{CLIP.src.stop()}catch(e){}CLIP.src=null}CLIP.until=0}
+// returns seconds played, 0 if the clip is not available (yet)
+function playClip(vid,k,i,rate=1,vol=1,dry=false){const c=SND.ctx;if(!c||c.state!=='running'||!CLIP.meta)return 0;const m=CLIP.meta.v[vid],a=m&&m.k[k];if(!a)return 0;
+  const b=CLIP.buf[vid];if(!b){clipLoad(vid,true);return 0}const e=a[i]||a[0];if(!e)return 0;clipStop();
+  const s=c.createBufferSource(),g=c.createGain();s.buffer=b;s.playbackRate.value=rate;g.gain.value=vol;s.connect(g);
+  if(dry){const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=90;g.connect(hp);hp.connect(SND.out||c.destination)}else g.connect(clipChain());
+  const st=Math.max(0,e[0]-.02),d=e[1]+.07;try{s.start(c.currentTime+.04,st,d)}catch(x){return 0}CLIP.src=s;s.onended=()=>{if(CLIP.src===s)CLIP.src=null};
+  const real=d/rate;CLIP.until=performance.now()+real*1000+120;
+  if(!dry){const pv=PV;PV=1;try{noise('bandpass',2600,2600,real+.04,.008,.6,.04);noise('bandpass',3200,1800,.08,.05,2,real+.06)}catch(x){}PV=pv}
+  return real}
+const clipHas=(vid,k)=>!!(CLIP.meta&&CLIP.meta.v[vid]&&CLIP.meta.v[vid].k[k]);
+// one fixed voice per vehicle type, every soldier gets his or her own
+const HEAVYV={titan:'m4',tank:'m2',railtank:'m3',flametank:'m4',bomber:'m3',sub:'m2',frigate:'m4',drone:'f4',scout:'f2'};
+function unitClipVoice(u){if(u.cv)return u.cv;let h=0;if(u.d.armor==='inf')h=(u.vseed||0)*7+3;else if(HEAVYV[u.type])return u.cv=HEAVYV[u.type];else for(const ch of u.type)h=(h*31+ch.charCodeAt(0))>>>0;return u.cv=UV[h%UV.length]}
 const pickL=L=>{let line=L[(Math.random()*L.length)|0];if(line===VO.lastKey&&L.length>1)line=L[(L.indexOf(line)+1)%L.length];VO.lastKey=line;return line};
 const uCls=u=>u.d.harvester?'harv':u.d.nav==='air'?'air':u.d.nav==='sea'?'sea':u.d.armor==='inf'?'inf':'veh';
 function emotionOf(u){if(!u||!G)return'calm';if(u.hp<u.maxHp*.35||G.time-u.hitT<2.5)return'stress';if(G.time-(u.killT||-99)<8||u.rank>=2&&Math.random()<.3)return'proud';return'calm'}
@@ -2815,31 +2873,35 @@ function resolveKey(key,u,emo){const c=uCls(u);
 const NATCAT={select:'sel',move:'ok',amove:'atk',attack:'atk',engineer:'ok',ready:'ok',kill:'kill',die:'die',hurt:'hurt',promo:'kill'};
 function speak(text,voice,lang,pitch,rate,vol){const ut=new SpeechSynthesisUtterance(text);ut.lang=lang;if(voice)ut.voice=voice;ut.pitch=clamp(pitch,0,2);ut.rate=clamp(rate,.5,2);ut.volume=vol;speechSynthesis.speak(ut);return text.length}
 function say(key,u){
-  if(!VO.on||!SND.on||!window.speechSynthesis||!G)return;
+  if(!VO.on||!SND.on||!G)return;
+  const useClip=!!(CLIP.meta||(CLIP.req&&!CLIP.failed));if(!useClip&&!window.speechSynthesis)return;
   if(u&&(u.team!==ME||!UNIT_KEYS.has(key)))u=null;
   const emo=u?emotionOf(u):'calm';
   const k=u?resolveKey(key,u,emo):key==='select'?'sel_inf':key;
   const L=LINES[k];if(!L)return;const now=performance.now(),pr=VPRIO[key]||VPRIO[k]||0;
+  const busy=()=>clipBusy()||(!!window.speechSynthesis&&speechSynthesis.speaking);
   if(key==='die'){if(now-VO.dieT<9000||Math.random()<.45)return;VO.dieT=now}
-  if(key==='kill'||key==='hurt'){if(now-VO.killT<15000||speechSynthesis.speaking||Math.random()<.5)return;VO.killT=now}
+  if(key==='kill'||key==='hurt'){if(now-VO.killT<15000||busy()||Math.random()<.5)return;VO.killT=now}
   if(key==='blost'){if(now-VO.bT<15000)return;VO.bT=now}
   const CH={select:.55,move:.4,attack:.5,amove:.5,ready:.35,built:.6,crate:.6};if(CH[key]&&k!=='annoyed'&&Math.random()>CH[key])return;
   if(now<VO.busyTill&&pr<2)return;if(pr<2&&now-VO.last<(u?2600:1500))return;
+  let pitch=1,rate=1.02,vol=.95;
+  if(u){const p=VPROF[u.type]||[1,1.08];pitch=p[0]+(u.vp||0);rate=p[1];vol=p[2]||.95;
+    pitch=1+(pitch-1)*.75;rate=1+(rate-1)*.6;
+    if(emo==='stress'||key==='die'||key==='hurt'){rate*=1.08;pitch+=.04;vol=1}else if(emo==='proud'||key==='kill'){rate*=1.02;pitch+=.02}}
+  let idx=(Math.random()*L.length)|0;if(L[idx]===VO.lastKey&&L.length>1)idx=(idx+1)%L.length;VO.lastKey=L[idx];
+  // 1) natural pre-rendered clip
+  if(useClip){let vid=u?unitClipVoice(u):'ann';if(!clipHas(vid,k))vid=clipHas('ann',k)?'ann':clipHas('m1',k)?'m1':null;
+    if(vid&&!CLIP.bad[vid]){if(pr<2&&busy())return;
+      const pr8=u?clamp(1+(pitch-1)*.45+(emo==='stress'?.03:0),.92,1.08):1;
+      const d=playClip(vid,k,idx,pr8,u?vol:1);if(d){VO.last=now;VO.busyTill=now+d*1000+350;return}
+      if(!CLIP.failed&&!CLIP.bad[vid])return}}  // still loading: stay quiet instead of a robot voice
+  // 2) fallback: the device's speech synthesis
+  if(!window.speechSynthesis)return;
   try{if(pr>=2)speechSynthesis.cancel();else if(speechSynthesis.speaking)return;
-    if(!VO.voice)VO.voice=pickVoice();
-    let pitch=1,rate=1.02,vol=.95,ch=null,cv=null,len=0;
-    if(u){const p=VPROF[u.type]||[1,1.08];pitch=p[0]+(u.vp||0);rate=p[1];vol=p[2]||.95;ch=u.ch||CHARS[0];pitch+=ch.pitch||0;
-      pitch=1+(pitch-1)*.75;rate=1+(rate-1)*.6;
-      if(emo==='stress'||key==='die'||key==='hurt'){rate*=1.08;pitch+=.04;vol=1}else if(emo==='proud'||key==='kill'){rate*=1.02;pitch+=.02}
-      cv=unitVoice(u)}
-    radioClick();
-    const deV=cv||VO.voice,nat=null;
-    if(nat){
-      // native phrase, German line with accent, or both
-      const r=Math.random(),both=r<ch.de*.45,onlyDe=!both&&r<ch.de;
-      if(!onlyDe)len+=speak(pickL(nat),cv,cv.lang||ch.lang,pitch,rate,vol);
-      if(both||onlyDe)len+=speak(pickL(L),cv,cv.lang||ch.lang,pitch,rate*.95,vol);
-    }else len+=speak(pickL(L),deV,(deV&&deV.lang)||'de-DE',pitch,u?rate:1,vol);
+    if(!VO.voice)VO.voice=pickVoice();const cv=u?unitVoice(u):null;
+    radioClick();const deV=cv||VO.voice;
+    const len=speak(L[idx],deV,(deV&&deV.lang)||'de-DE',pitch,u?rate:1,vol);
     VO.last=now;VO.busyTill=now+len*58+400;
   }catch(e){}
 }
@@ -2963,11 +3025,11 @@ $('#empBtn').onclick=()=>{if(!G)return;if(G.teams[ME].pw.emp<1){toast('Der EMP l
 $('#gfxBtn').onclick=()=>{quality=(quality+1)%3;try{localStorage.setItem('wzc-gfx',quality)}catch(e){}if(R)applyQuality();else $('#gfxBtn').textContent='Grafik: '+QUAL[quality];toast('Grafik: '+QUAL[quality]+(quality===0?' (Leuchteffekte, scharfe Schatten)':quality===1?' (Schatten, ohne Leuchteffekte)':' (schnellste Stufe)'))};
 $('#gfxBtn').textContent='Grafik: '+QUAL[quality];
 const sbtn=$('#soundBtn');const setSoundUI=()=>{sbtn.textContent=SND.on?'Ton an':'Ton aus';sbtn.setAttribute('aria-pressed',SND.on)};setSoundUI();
-sbtn.onclick=()=>{SND.on=!SND.on;audioInit();try{localStorage.setItem('wzc-sound',SND.on?'on':'off')}catch(e){}setSoundUI();setAmb(G&&!G.over);sfx('click');if(!SND.on&&window.speechSynthesis)speechSynthesis.cancel()};
+sbtn.onclick=()=>{SND.on=!SND.on;audioInit();try{localStorage.setItem('wzc-sound',SND.on?'on':'off')}catch(e){}setSoundUI();setAmb(G&&!G.over);sfx('click');if(!SND.on){clipStop();if(window.speechSynthesis)speechSynthesis.cancel()}};
 const vbtn=$('#voiceBtn');const setVoiceUI=()=>{vbtn.textContent=VO.on?'Funk an':'Funk aus';vbtn.setAttribute('aria-pressed',VO.on)};setVoiceUI();
-if(!window.speechSynthesis)vbtn.hidden=true;
+
 vbtn.onclick=()=>{VO.mode=VO.on?'off':'de';try{localStorage.setItem('wzc-voice',VO.mode)}catch(e){}setVoiceUI();
-  if(VO.on){voiceUnlock();VO.last=0;VO.busyTill=0;const u=G&&(G.sel[0]||G.units.find(x=>x.team===ME&&x.ch));if(u)say('select',u);else say('ready');voiceTip(true)}else speechSynthesis.cancel()};
+  if(VO.on){voiceUnlock();VO.last=0;VO.busyTill=0;const u=G&&(G.sel[0]||G.units.find(x=>x.team===ME&&x.ch));if(u)say('select',u);else say('ready');if(!CLIP.meta)voiceTip(true)}else{clipStop();if(window.speechSynthesis)speechSynthesis.cancel()}};
 // start screen
 let diffKey='normal',foeN=2,mapI=4;const mapSeeds=MAPS.map(()=>(Math.random()*1e9)|0);
 function buildMapCards(){const el=$('#mapSel');el.innerHTML='';
@@ -3006,7 +3068,7 @@ function frame(now){
 netInit();
 resize();
 requestAnimationFrame(frame);
-window.__wzc={get G(){return G},NET,act,get ME(){return ME},get R(){return R},VO,newGame,update,canPlace,addBuilding,placeSite,queueUnit,queueResearch,groupMove,spawnUnit,orbitStrike,empBlast,cancelSite,tryBuild,placeAt,
+window.__wzc={get G(){return G},CLIP,playClip,say,NET,act,get ME(){return ME},get R(){return R},VO,newGame,update,canPlace,addBuilding,placeSite,queueUnit,queueResearch,groupMove,spawnUnit,orbitStrike,empBlast,cancelSite,tryBuild,placeAt,
   cam:(x,y,z,yaw)=>{cam.x=x;cam.y=y;cam.z=z;cam.yaw=yaw},ts:(x,y,h)=>toScreen(x,y,h),get water(){return water},get oil(){return oil},get MW(){return MW},get MH(){return MH},say,setTab,tap:(x,y)=>tap(x,y),get INTRO(){return INTRO},endIntro:()=>endIntro()};
 // ---------- cinematic intro: story briefing with narrator, camera flight, orbital strike, title ----------
 const OPS=['Stahlregen','Nachtfalke','Donnerkeil','Glutwind','Eisenwolke','Morgengrauen','Sandsturm','Kupferhimmel'];
@@ -3018,7 +3080,7 @@ function introMusic(dur){const c=SND.ctx;if(!c||!SND.on||c.state!=='running')ret
     const t=c.currentTime;g.gain.linearRampToValueAtTime(.2,t+3);f.frequency.setValueAtTime(160,t);f.frequency.linearRampToValueAtTime(1100,t+dur*.85);
     return{stop(fade=1.2){const n=c.currentTime;g.gain.cancelScheduledValues(n);g.gain.setValueAtTime(g.gain.value,n);g.gain.linearRampToValueAtTime(0,n+fade);os.forEach(o=>{try{o.stop(n+fade+.1)}catch(e){}})}}}catch(e){return null}}
 function introHit(big){if(!SND.ctx||!SND.on||SND.ctx.state!=='running')return;try{PV=1;tone('sine',big?64:80,30,big?1.6:.9,big?.6:.4);noise('lowpass',big?700:500,60,big?1.4:.7,big?.45:.25);if(big)noise('highpass',6000,1200,.6,.12,1,.05)}catch(e){}}
-function narrate(text,rate=1){if(!VO.on||!SND.on||!window.speechSynthesis)return;try{speechSynthesis.cancel();if(!VO.voice)VO.voice=pickVoice();const ut=new SpeechSynthesisUtterance(text);ut.lang='de-DE';if(VO.voice)ut.voice=VO.voice;ut.pitch=.97;ut.rate=rate;ut.volume=1;speechSynthesis.speak(ut)}catch(e){}}
+function narrate(text,rate=1,ci=-1){if(!VO.on||!SND.on)return;if(ci>=0&&CLIP.meta&&!CLIP.bad.nar){clipStop();if(playClip('nar','intro',ci,1,1.25,true)||!CLIP.failed)return}if(!window.speechSynthesis)return;try{speechSynthesis.cancel();if(!VO.voice)VO.voice=pickVoice();const ut=new SpeechSynthesisUtterance(text);ut.lang='de-DE';if(VO.voice)ut.voice=VO.voice;ut.pitch=.97;ut.rate=rate;ut.volume=1;speechSynthesis.speak(ut)}catch(e){}}
 function chorus(){return;
   const pick=['us','ru','tr','jp','cn','it'];let n=0;
   for(const id of pick){const c=CHARS.find(k=>k.id===id),v=voiceFor(c,(Math.random()*9)|0);if(!v||n>=4)continue;n++;
@@ -3056,7 +3118,7 @@ function introTick(dt){const I=INTRO;if(!I||I.done)return;I.t+=dt;
   if(I.t>=K[K.length-1][0]){cam.x=K[K.length-1][1];cam.y=K[K.length-1][2];cam.z=K[K.length-1][3];cam.yaw=0}
   // story cards
   const ci=I.cards.findIndex(c=>I.t>=c.t0&&I.t<c.t0+c.dur);
-  if(ci>=0&&ci!==I.ci){I.ci=ci;const c=I.cards[ci];narrate(c.txt,1.02);if(ci)introHit(false);$('#inTxt').textContent='';I.typed=0;
+  if(ci>=0&&ci!==I.ci){I.ci=ci;const c=I.cards[ci];narrate(c.txt,1.02,ci);if(ci)introHit(false);$('#inTxt').textContent='';I.typed=0;
     $('#inFlags').classList.toggle('on',!!c.flags);if(c.flags)setTimeout(()=>{if(INTRO&&!INTRO.done&&INTRO.ci===ci)chorus()},Math.min(5200,c.txt.length*62))}
   if(ci>=0){const c=I.cards[ci],n=Math.min(c.txt.length,Math.floor((I.t-c.t0)*42));if(n!==I.typed){I.typed=n;$('#inTxt').textContent=c.txt.slice(0,n)}}
   // wow: orbital strike on the enemy front during card 2
@@ -3068,12 +3130,12 @@ function introTick(dt){const I=INTRO;if(!I||I.done)return;I.t+=dt;
   if(I.t>=I.titleT)endIntro();
 }
 function endIntro(){const I=INTRO;if(!I||I.done)return;I.done=true;if(I.music&&!I.title)I.music.stop(.6);
-  try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
+  try{clipStop();if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
   G.intro=false;FOGU.fogTex.value=R.fogTex;document.body.classList.remove('cine');resize();
   const k=I.keys[I.keys.length-1];cam.x=k[1];cam.y=k[2];cam.z=k[3];cam.yaw=0;clampCam();
   const ov=$('#introOv');ov.classList.add('out');setTimeout(()=>{ov.hidden=true;ov.classList.remove('out')},700);
   try{localStorage.setItem('wzc-intro','seen')}catch(e){}
-  refreshUI(true);setTimeout(()=>{VO.last=0;VO.busyTill=0;say('start')},500);setTimeout(()=>voiceTip(false),4500);
+  refreshUI(true);setTimeout(()=>{VO.last=0;VO.busyTill=0;say('start')},500);setTimeout(()=>{if(!CLIP.meta)voiceTip(false)},4500);
 }
 $('#introSkip').onclick=e=>{e.stopPropagation();endIntro()};
 })();
