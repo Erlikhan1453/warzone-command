@@ -84,6 +84,9 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #placebar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:#0b0e0de6;border:1px solid var(--accent);border-radius:6px;padding:6px 6px 6px 12px;font-size:12.5px;max-width:calc(100% - 20px)}
 @media (orientation:landscape){#placebar{left:auto;right:10px;transform:none}}
 #placebar button{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 10px;font-size:12px}
+#placebar #placeOk{background:#2f6b2c;border-color:#6fd36a;color:#eaffe6;font-weight:700;min-height:36px;padding:5px 14px}
+#placebar #placeOk.bad{background:var(--panel2);border-color:#ef5b4b;color:#ef9a8f}
+#placebar button{flex:none}
 #selinfo{position:absolute;left:max(8px,env(safe-area-inset-left,0px));bottom:10px;max-width:min(64%,340px);background:#0b0e0dcc;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.35;display:flex;gap:10px;align-items:center;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 #selinfo .t{font-family:var(--display);font-weight:600;font-size:13px}
 #selinfo .s{color:var(--muted);font-size:11px}
@@ -245,7 +248,7 @@ body.cine #zoomBar{display:none!important}
     </div>
     <div id="zoomBar"><button class="chip" id="zoomInBtn" type="button" aria-label="Karte vergrössern">+</button><button class="chip" id="zoomOutBtn" type="button" aria-label="Karte verkleinern">−</button><button class="chip" id="menuBtn" type="button" aria-label="Menü ein- oder ausblenden" aria-pressed="false">☰</button></div>
     <div id="toast" hidden></div>
-    <div id="placebar" hidden><span id="placeTxt">Tippe auf ein freies Feld nahe deiner Basis.</span><button id="placeCancel" type="button">Abbrechen</button></div>
+    <div id="placebar" hidden><span id="placeTxt">Tippe auf ein freies Feld nahe deiner Basis.</span><button id="placeOk" type="button" hidden>✓ Bauen</button><button id="placeCancel" type="button">Abbrechen</button></div>
     <div id="selinfo" hidden></div>
 
     <div class="ov" id="startOv">
@@ -279,7 +282,7 @@ body.cine #zoomBar{display:none!important}
         </div>
         <button class="go host-only" id="startBtn" type="button">Einsatz starten</button>
         <div class="ctrl">
-          <div><b>iPhone / Touch</b>Einheit antippen, dann Ziel antippen. Ein Finger schiebt die Karte, zwei Finger zoomen und drehen. „Angriff“ einschalten, damit Truppen unterwegs alles bekämpfen. Gebäude wählen und auf die Karte tippen setzt den Sammelpunkt. G1 bis G3 lange drücken speichert eine Gruppe.</div>
+          <div><b>iPhone / Touch</b>Einheit antippen, dann Ziel antippen. Ein Finger schiebt die Karte (mit Schwung), zwei Finger zoomen, kräftig drehen dreht die Ansicht. Neue Gebäude erscheinen als Vorschau: mit dem Finger an den Platz ziehen, dann „Bauen“ tippen. „Angriff“ einschalten, damit Truppen unterwegs alles bekämpfen. Gebäude wählen und auf die Karte tippen setzt den Sammelpunkt. G1 bis G3 lange drücken speichert eine Gruppe.</div>
           <div><b>Maus und Tastatur</b>Klicken wählt und befiehlt, Rahmen ziehen wählt mehrere. A + Klick = Angriffsbefehl. Strg + 1 bis 3 speichert Gruppen, 1 bis 3 ruft sie ab. Mausrad zoomt, WASD scrollt, Q/E oder mittlere Maustaste dreht, F wählt alle Truppen.</div>
         </div>
         <div class="note">Neu in 0.6: Mehrspieler! Unter „Mitspieler“ einen Raum erstellen, den 5-stelligen Code an Freunde schicken und gemeinsam spielen, gegeneinander oder zusammen gegen die KI (bis 4 Spieler, ohne Anmeldung). Neu in 0.5: internationale Truppe (alle sprechen Deutsch), eigene Stimmlage je Einheit, Emotionen unter Beschuss, viel mehr sarkastische Funksprüche und letzte Worte, Story-Intro, Riesenkarte „Kontinent“, 7 neue Einheiten und 5 neue Gebäude. Natürlichere Stimmen: am iPhone unter Einstellungen › Bedienungshilfen › Gesprochene Inhalte › Stimmen › Deutsch eine „Premium“-Stimme laden. Am iPhone quer halten. Kein Ton? Lautlos-Schalter prüfen.</div>
@@ -1180,6 +1183,7 @@ function placeAt(wx,wy){
   stopPlacing();refreshUI(true);
 }
 function startPlacing(type){G.placing=true;G.placeType=type;G.ghost=null;$('#placebar').hidden=false;const d=BDEF[type];
+  const tp=touchPlace();$('#placeOk').hidden=!tp;if(tp){firstGhost();$('#placeTxt').textContent=d.name+(d.oil?': auf Ölquelle ziehen':d.naval?': ans Ufer ziehen':': hinziehen, dann Bauen');return}
   $('#placeTxt').textContent=d.name+(d.naval?': Tippe auf ein Ufer nahe deiner Basis.':d.oil?': Tippe auf eine Ölquelle (dunkler Fleck), auch weit weg.':d.wall?': Tippe mehrmals, um eine Linie zu bauen.':': Tippe auf ein freies Feld nahe deiner Basis.')}
 function stopPlacing(){if(!G)return;G.placing=false;G.placeType=null;G.ghost=null;$('#placebar').hidden=true}
 // ---------- AI ----------
@@ -2149,7 +2153,10 @@ function render(){
   octx.setTransform(DPR,0,0,DPR,0,0);octx.clearRect(0,0,vw,vh);
   if(!G||!R)return;
   const now=performance.now(),dt=Math.min(.1,(now-R.last)/1000);R.last=now;
-  if(camVel&&!pts.size){cam.x+=camVel.x*dt;cam.y+=camVel.y*dt;clampCam();const f=Math.exp(-dt*4.5);camVel.x*=f;camVel.y*=f;if(Math.hypot(camVel.x,camVel.y)<15)camVel=null}
+  if(camVel&&!pts.size){const ox=cam.x+camVel.x*dt,oy=cam.y+camVel.y*dt;cam.x=ox;cam.y=oy;clampCam();if(cam.x!==ox)camVel.x=0;if(cam.y!==oy)camVel.y=0;const f=Math.exp(-dt*4.2);camVel.x*=f;camVel.y*=f;if(Math.hypot(camVel.x,camVel.y)<15)camVel=null}
+  if(zAnim&&!(gesture&&gesture.type==='pinch')){const k=1-Math.exp(-dt*11);let nz=cam.z*Math.pow(zAnim.z/cam.z,k);if(Math.abs(Math.log(zAnim.z/nz))<.004)nz=zAnim.z;updateCamera();zoomAt(zAnim.sx,zAnim.sy,nz,true);if(nz===zAnim.z)zAnim=null}
+  if(gesture&&gesture.type==='ghost'&&gesture.p&&G.ghost){const p=gesture.p,m=46,ex=p.x<m?-1:p.x>vw-m?1:0,ey=p.y<m?-1:p.y>vh-m?1:0;
+    if(ex||ey){updateCamera();const a=groundAt(vw/2,vh/2),b=groundAt(vw/2+ex*60,vh/2+ey*60);if(a&&b){cam.x+=(b.x-a.x)*dt*6;cam.y+=(b.y-a.y)*dt*6;clampCam();updateCamera();moveGhost(p)}}}
   R.fps=R.fps*.95+(1/Math.max(dt,.001))*.05;R.fpsT+=dt;
   if(R.fpsT>3){if(R.fps<26&&quality<2&&!G.paused){R.lowT+=R.fpsT;if(R.lowT>6){quality++;applyQuality();toast('Grafik automatisch auf „'+QUAL[quality]+'“ gestellt, damit es flüssig läuft.');R.lowT=0}}else R.lowT=0;R.fpsT=0}
   updateLighting(dt);updateCamera();
@@ -2239,7 +2246,7 @@ function render(){
     if(G.ghost){gx=G.ghost.tx;gy=G.ghost.ty}else if(G.hover){gx=Math.round(G.hover.x/T-d.w/2);gy=Math.round(G.hover.y/T-d.h/2)}
     if(R.ghostType!==type){if(R.ghost)R.scene.remove(R.ghost);R.ghostMat=R.ghostMat||new THREE.MeshStandardMaterial({color:'#6fd36a',transparent:true,opacity:.55,emissive:'#2a8a2a',emissiveIntensity:.6,depthWrite:false});
       R.ghost=makeBuilding(type,0,R.ghostMat);R.ghost.traverse(m=>{m.castShadow=false});R.scene.add(R.ghost);R.ghostType=type}
-    if(gx!==undefined){const ok=canPlace(ME,type,gx,gy);R.ghost.visible=true;R.ghost.position.set(gx,Math.max(hAt(gx+d.w/2,gy+d.h/2),-.1)+.05,gy);R.ghostMat.color.set(ok?'#6fd36a':'#ef5b4b');R.ghostMat.emissive.set(ok?'#2a8a2a':'#8a2a2a')}else R.ghost.visible=false}
+    if(gx!==undefined){const ok=canPlace(ME,type,gx,gy);if(R.ghostOk!==ok){R.ghostOk=ok;$('#placeOk').classList.toggle('bad',!ok)}R.ghost.visible=true;R.ghost.position.set(gx,Math.max(hAt(gx+d.w/2,gy+d.h/2),-.1)+.05,gy);R.ghostMat.color.set(ok?'#6fd36a':'#ef5b4b');R.ghostMat.emissive.set(ok?'#2a8a2a':'#8a2a2a')}else R.ghost.visible=false}
   else if(R.ghost)R.ghost.visible=false;
   if(G.selB&&!G.selB.dead){const b=G.selB;if(!R.selRect){R.selRect=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(1,0,0),new THREE.Vector3(1,0,1),new THREE.Vector3(0,0,1)]),new THREE.LineBasicMaterial({color:'#e8ebe1'}));R.scene.add(R.selRect)}
     R.selRect.visible=true;R.selRect.position.set(b.tx,b.o3?b.o3.position.y+.2:.2,b.ty);R.selRect.scale.set(b.w,1,b.h)}else if(R.selRect)R.selRect.visible=false;
@@ -2285,33 +2292,39 @@ function renderMini(){
 
 // ---------- camera ----------
 function defaultZoom(){return vw<700||vh<500?12:16}
-function clampCam(){cam.x=clamp(cam.x,0,WW);cam.y=clamp(cam.y,0,WH);cam.z=clamp(cam.z,7,zMax())}
+function clampCam(soft){cam.x=clamp(cam.x,0,WW);cam.y=clamp(cam.y,0,WH);cam.z=soft?clamp(cam.z,7*.72,zMax()*1.3):clamp(cam.z,7,zMax())}
+// rubber band: pinching past the zoom limit gets heavier, then springs back on release
+function softZ(z){const lo=7,hi=zMax();return z<lo?lo*Math.pow(z/lo,.35):z>hi?hi*Math.pow(z/hi,.35):z}
+let zAnim=null;function zoomTo(nz,sx,sy){zAnim={z:clamp(nz,7,zMax()),sx:sx===undefined?vw/2:sx,sy:sy===undefined?vh/2:sy}}
+function springZoom(sx,sy){const z=clamp(cam.z,7,zMax());if(Math.abs(z-cam.z)>.01)zoomTo(z,sx,sy)}
 function centerOn(x,y){cam.x=x;cam.y=y;clampCam()}
-function zoomAt(sx,sy,nz){const g=groundAt(sx,sy);const oz=cam.z;cam.z=clamp(nz,7,zMax());if(g){const f=1-cam.z/oz;cam.x+=(g.x-cam.x)*f;cam.y+=(g.y-cam.y)*f}clampCam()}
+function zoomAt(sx,sy,nz,soft){const g=groundAt(sx,sy);const oz=cam.z;cam.z=soft?nz:clamp(nz,7,zMax());if(g){const f=1-cam.z/oz;cam.x+=(g.x-cam.x)*f;cam.y+=(g.y-cam.y)*f}clampCam(soft)}
 function resize(){const r=view.getBoundingClientRect();vw=Math.max(1,r.width);vh=Math.max(1,r.height);view.width=Math.round(vw*DPR);view.height=Math.round(vh*DPR);
   if(R){R.renderer.setSize(vw,vh,false);R.camera.aspect=vw/vh;R.camera.updateProjectionMatrix();if(R.composer){R.composer.setPixelRatio(R.renderer.getPixelRatio());R.composer.setSize(vw,vh);if(R.bloom)R.bloom.setSize(vw*R.renderer.getPixelRatio()/2,vh*R.renderer.getPixelRatio()/2)}}
   if(G)clampCam()}
 window.addEventListener('resize',()=>{resize();refreshUI(true)});
 
 // ---------- input ----------
-let gesture=null;const pts=new Map();let lastTap={t:0,id:-1};let boxMode=false;let camVel=null;const LONGP=320;
+let gesture=null;const pts=new Map();let lastTap={t:0,id:-1};let boxMode=false;let camVel=null;const LONGP=450;
 const toWorld=(sx,sy)=>groundAt(sx,sy)||{x:cam.x,y:cam.y};
 const local=e=>{const r=view.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
-function grabPan(g,p){updateCamera();const now=groundAt(p.x,p.y);if(!now||!g)return;const dx=now.x-g.x,dy=now.y-g.y;cam.x-=dx;cam.y-=dy;clampCam();updateCamera();
+function grabPan(g,p,soft){updateCamera();const now=groundAt(p.x,p.y);if(!now||!g)return;const dx=now.x-g.x,dy=now.y-g.y;cam.x-=dx;cam.y-=dy;clampCam(soft);updateCamera();
   if(gesture&&gesture.type==='pan'){const t=performance.now(),el=Math.max(8,t-(gesture.lt||t-16));gesture.lt=t;const k=.35;gesture.vx=(gesture.vx||0)*(1-k)+(-dx/el*1000)*k;gesture.vy=(gesture.vy||0)*(1-k)+(-dy/el*1000)*k}}
 view.addEventListener('pointerdown',e=>{
   if(!G||G.over)return;try{view.setPointerCapture(e.pointerId)}catch(_){}const p=local(e);pts.set(e.pointerId,p);camVel=null;G.touch=e.pointerType!=='mouse';
-  if(pts.size===2){const[a,b]=[...pts.values()];const m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};gesture={type:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,z0:cam.z,a0:Math.atan2(b.y-a.y,b.x-a.x),yaw0:cam.yaw,rot:false,g:toWorld(m.x,m.y)}}
+  if(pts.size===2){zAnim=null;const[a,b]=[...pts.values()];const m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};gesture={type:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,z0:cam.z,a0:Math.atan2(b.y-a.y,b.x-a.x),yaw0:cam.yaw,rot:false,g:toWorld(m.x,m.y)}}
+  else if(pts.size===1&&G.placing&&G.ghost&&e.pointerType!=='mouse'&&onGhost(p)){const g=groundAt(p.x,p.y);gesture={type:'ghost',x0:p.x,y0:p.y,p,dx:g.x/T-G.ghost.tx,dy:g.y/T-G.ghost.ty,moved:false}}
   else if(pts.size===1)gesture={type:'pending',x0:p.x,y0:p.y,x1:p.x,y1:p.y,btn:e.button,pt:e.pointerType,shift:e.shiftKey,g:toWorld(p.x,p.y),yaw0:cam.yaw,t0:performance.now()};
 });
 view.addEventListener('pointermove',e=>{
   const p=local(e);if(e.pointerType==='mouse'&&G){G.mouse=p}
   if(!pts.has(e.pointerId))return;pts.set(e.pointerId,p);if(!gesture)return;
   if(gesture.type==='pinch'&&pts.size>=2){const[a,b]=[...pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-    cam.z=clamp(gesture.z0*gesture.d0/d,7,zMax());const ang=Math.atan2(b.y-a.y,b.x-a.x);
+    cam.z=softZ(gesture.z0*gesture.d0/d);gesture.m=m;const ang=Math.atan2(b.y-a.y,b.x-a.x);
     // rotate only after a clear twist, so pinch-zoom never tilts the view by accident
-    if(!gesture.rot&&Math.abs(angDiff(ang,gesture.a0))>.35){gesture.rot=true;gesture.a0=ang;gesture.yaw0=cam.yaw}
-    if(gesture.rot)cam.yaw=gesture.yaw0-angDiff(ang,gesture.a0);grabPan(gesture.g,m);return}
+    if(!gesture.rot&&Math.abs(angDiff(ang,gesture.a0))>.45){gesture.rot=true;gesture.a0=ang;gesture.yaw0=cam.yaw}
+    if(gesture.rot)cam.yaw=gesture.yaw0-angDiff(ang,gesture.a0);grabPan(gesture.g,m,true);return}
+  if(gesture.type==='ghost'){gesture.p=p;if(Math.hypot(p.x-gesture.x0,p.y-gesture.y0)>10)gesture.moved=true;if(gesture.moved)moveGhost(p);return}
   if(gesture.type==='pending'&&Math.hypot(p.x-gesture.x0,p.y-gesture.y0)>(gesture.pt==='mouse'?6:12)){
     if(gesture.pt==='mouse')gesture.type=gesture.btn===0?'box':gesture.btn===1?'rot':'pan';else gesture.type=boxMode||performance.now()-gesture.t0>LONGP?'box':'pan';if(gesture.type==='pan')gesture.lt=performance.now()}
   if(gesture.type==='pan')grabPan(gesture.g,p);
@@ -2322,7 +2335,9 @@ view.addEventListener('pointermove',e=>{
 function endPtr(e){
   if(!pts.has(e.pointerId))return;const p=pts.get(e.pointerId);pts.delete(e.pointerId);
   if(!gesture)return;
-  if(gesture.type==='pinch'){if(pts.size===0)gesture=null;else gesture={type:'none'};return}
+  // pinch ends: spring back inside the zoom limits; the finger that stays keeps dragging the map
+  if(gesture.type==='pinch'){const m=gesture.m||p;if(pts.size===0){gesture=null;springZoom(m.x,m.y)}else if(pts.size===1){const[q]=[...pts.values()];springZoom(q.x,q.y);gesture={type:'pan',g:toWorld(q.x,q.y),lt:performance.now(),vx:0,vy:0}}else gesture={type:'none'};return}
+  if(gesture.type==='ghost'){if(!gesture.moved&&e.type!=='pointercancel')confirmPlace();gesture=null;return}
   if(e.type==='pointercancel'){gesture=null;return}
   if(gesture.type==='pending'){if(gesture.btn===2)rightClick(p.x,p.y);else tap(p.x,p.y,gesture.shift)}
   else if(gesture.type==='box'){boxSelect(gesture)}
@@ -2340,8 +2355,22 @@ let zoomFixT=0;function fixPageZoom(){const vv=window.visualViewport,m=document.
   m.content='width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';setTimeout(()=>{m.content=c;window.scrollTo(0,0);resize()},80)}
 if(window.visualViewport)visualViewport.addEventListener('resize',()=>{clearTimeout(zoomFixT);zoomFixT=setTimeout(fixPageZoom,300)});
 window.addEventListener('scroll',()=>{if(window.scrollY||window.scrollX)window.scrollTo(0,0)});
-$('#zoomInBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomAt(vw/2,vh/2,cam.z*.72)}};
-$('#zoomOutBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomAt(vw/2,vh/2,cam.z/.72)}};
+$('#zoomInBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomTo((zAnim?zAnim.z:cam.z)*.72)}};
+$('#zoomOutBtn').onclick=e=>{e.stopPropagation();if(G){camVel=null;zoomTo((zAnim?zAnim.z:cam.z)/.72)}};
+// ---------- touch placement: building preview you drag into place, then confirm ----------
+function touchPlace(){return G&&G.placing&&G.placeType&&!BDEF[G.placeType].wall&&(G.touch||matchMedia('(pointer:coarse)').matches)}
+function ghostTile(wx,wy){const d=BDEF[G.placeType];return{tx:clamp(Math.round(wx/T-d.w/2),0,MW-d.w),ty:clamp(Math.round(wy/T-d.h/2),0,MH-d.h)}}
+function setGhost(wx,wy){if(!G.placeType)return;G.ghost=ghostTile(wx,wy);sfx('select')}
+function moveGhost(p){const g=groundAt(p.x,p.y);if(!g||!G.ghost)return;const d=BDEF[G.placeType];const n={tx:clamp(Math.round(g.x/T-gesture.dx),0,MW-d.w),ty:clamp(Math.round(g.y/T-gesture.dy),0,MH-d.h)};
+  if(n.tx!==G.ghost.tx||n.ty!==G.ghost.ty){G.ghost=n;try{if(navigator.vibrate)navigator.vibrate(4)}catch(_){}}}
+function onGhost(p){const g=groundAt(p.x,p.y);if(!g||!G.ghost)return false;const d=BDEF[G.placeType],x=g.x/T,y=g.y/T,pad=Math.max(.8,cam.z*.05);
+  return x>=G.ghost.tx-pad&&x<=G.ghost.tx+d.w+pad&&y>=G.ghost.ty-pad&&y<=G.ghost.ty+d.h+pad}
+function confirmPlace(){if(!G||!G.placing||!G.ghost)return;const d=BDEF[G.placeType];placeAt((G.ghost.tx+d.w/2)*T,(G.ghost.ty+d.h/2)*T)}
+// first preview: the free spot nearest to the middle of the screen
+function firstGhost(){const d=BDEF[G.placeType];updateCamera();const c=groundAt(vw/2,vh*.45)||{x:cam.x,y:cam.y};const c0=ghostTile(c.x,c.y);
+  for(let r=0;r<=18;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;const tx=c0.tx+dx,ty=c0.ty+dy;
+    if(tx<0||ty<0||tx>MW-d.w||ty>MH-d.h)continue;if(canPlace(ME,G.placeType,tx,ty)){G.ghost={tx,ty};const p=toScreen((tx+d.w/2)*T,(ty+d.h/2)*T,0);if(!p.ok||p.x<40||p.x>vw-40||p.y<60||p.y>vh-60)zAnim=null,centerOn((tx+d.w/2)*T,(ty+d.h/2)*T);return}}
+  G.ghost=c0}
 const setMenu=min=>{document.body.classList.toggle('menuMin',min);$('#menuBtn').setAttribute('aria-pressed',min);resize();try{localStorage.setItem('wzc-menu',min?'min':'full')}catch(e){}};
 $('#menuBtn').onclick=e=>{e.stopPropagation();setMenu(!document.body.classList.contains('menuMin'))};
 const keys=new Set();
@@ -2369,7 +2398,7 @@ function buildingAtScreen(sx,sy){
 function tap(sx,sy,shift,cmdOnly){
   const gw=groundAt(sx,sy);
   if(G.target){if(gw){act(G.target==='ion'?'io':'em',Math.round(gw.x),Math.round(gw.y));say(G.target==='ion'?'orbit_fire':'emp')}G.target=null;refreshUI(true);return}
-  if(G.placing){if(gw)placeAt(gw.x,gw.y);return}
+  if(G.placing){if(gw){if(touchPlace())setGhost(gw.x,gw.y);else placeAt(gw.x,gw.y)}return}
   const now=performance.now();
   const mu=cmdOnly?null:unitAtScreen(sx,sy,true);
   if(mu&&!G.amMode){
@@ -3019,7 +3048,7 @@ $('#allBtn').onclick=selectAll;$('#stopBtn').onclick=stopSel;$('#homeBtn').oncli
 $('#amBtn').onclick=()=>{if(!G)return;if(!G.sel.length){toast('Erst Truppen wählen, dann „Angriff“ und das Ziel antippen.');return}setAm(!G.amMode)};
 $('#boxBtn').onclick=()=>{boxMode=!boxMode;$('#boxBtn').setAttribute('aria-pressed',boxMode);toast(boxMode?'Rahmen an: Mit dem Finger ziehen wählt Einheiten aus.':'Rahmen aus: Mit dem Finger ziehen verschiebt die Karte.')};
 $('#speedBtn').onclick=()=>{if(!G)return;if(G.mp){act('sp');return}G.speed=G.speed===1?1.5:G.speed===1.5?2:1;$('#speedBtn').textContent='Tempo '+String(G.speed).replace('.',',')+'×'};
-$('#placeCancel').onclick=()=>stopPlacing();
+$('#placeCancel').onclick=()=>stopPlacing();$('#placeOk').onclick=e=>{e.stopPropagation();confirmPlace()};
 $('#ionBtn').onclick=()=>{if(!G)return;if(G.teams[ME].pw.ion<1){toast('Der Orbital-Uplink lädt noch.');return}G.target=G.target==='ion'?null:'ion';G.sel=[];G.selB=null;stopPlacing();if(G.target)toast('Orbitalschlag: Tippe auf das Ziel. Trifft alles im Umkreis, ausser deinen Einheiten.',true);refreshUI(true)};
 $('#empBtn').onclick=()=>{if(!G)return;if(G.teams[ME].pw.emp<1){toast('Der EMP lädt noch.');return}G.target=G.target==='emp'?null:'emp';G.sel=[];G.selB=null;stopPlacing();if(G.target)toast('EMP: Tippe auf das Zielgebiet.');refreshUI(true)};
 $('#gfxBtn').onclick=()=>{quality=(quality+1)%3;try{localStorage.setItem('wzc-gfx',quality)}catch(e){}if(R)applyQuality();else $('#gfxBtn').textContent='Grafik: '+QUAL[quality];toast('Grafik: '+QUAL[quality]+(quality===0?' (Leuchteffekte, scharfe Schatten)':quality===1?' (Schatten, ohne Leuchteffekte)':' (schnellste Stufe)'))};
@@ -3069,7 +3098,7 @@ netInit();
 resize();
 requestAnimationFrame(frame);
 window.__wzc={get G(){return G},CLIP,playClip,say,NET,act,get ME(){return ME},get R(){return R},VO,newGame,update,canPlace,addBuilding,placeSite,queueUnit,queueResearch,groupMove,spawnUnit,orbitStrike,empBlast,cancelSite,tryBuild,placeAt,
-  cam:(x,y,z,yaw)=>{cam.x=x;cam.y=y;cam.z=z;cam.yaw=yaw},ts:(x,y,h)=>toScreen(x,y,h),get water(){return water},get oil(){return oil},get MW(){return MW},get MH(){return MH},say,setTab,tap:(x,y)=>tap(x,y),get INTRO(){return INTRO},endIntro:()=>endIntro()};
+  cam:(x,y,z,yaw)=>{cam.x=x;cam.y=y;cam.z=z;cam.yaw=yaw},get camNow(){return{...cam}},ts:(x,y,h)=>toScreen(x,y,h),get water(){return water},get oil(){return oil},get MW(){return MW},get MH(){return MH},say,setTab,tap:(x,y)=>tap(x,y),get INTRO(){return INTRO},endIntro:()=>endIntro()};
 // ---------- cinematic intro: story briefing with narrator, camera flight, orbital strike, title ----------
 const OPS=['Stahlregen','Nachtfalke','Donnerkeil','Glutwind','Eisenwolke','Morgengrauen','Sandsturm','Kupferhimmel'];
 let INTRO=null;
