@@ -269,6 +269,9 @@ body.cine #zoomBar{display:none!important}
             <button type="button" data-d="easy" aria-pressed="false">Leicht</button><button type="button" data-d="normal" aria-pressed="true">Normal</button><button type="button" data-d="hard" aria-pressed="false">Schwer</button>
           </div></div>
         </div>
+        <div class="host-only"><div class="lbl">Wetter und Nacht</div><div class="seg" id="wxSeg">
+          <button type="button" data-w="off" aria-pressed="true">Aus (immer Tag, klare Sicht)</button><button type="button" data-w="on" aria-pressed="false">An</button>
+        </div></div>
         <div><div class="lbl">Mitspieler</div><div class="seg" id="mpSeg">
           <button type="button" data-m="solo" aria-pressed="true">Allein</button><button type="button" data-m="host" aria-pressed="false">Raum erstellen</button><button type="button" data-m="join" aria-pressed="false">Raum beitreten</button>
         </div></div>
@@ -458,7 +461,14 @@ const MAPS=[
   {id:'ebene',name:'Weite Ebene',desc:'Schluchten, viel Erz',w:128,h:96,water:'none',rocks:46},
   {id:'front',name:'Grosse Front',desc:'See, Flüsse, Bergketten, Ölfelder',w:192,h:160,water:'mixed',rocks:120,ridges:8,big:true},
   {id:'kontinent',name:'Kontinent',desc:'Riesig: 10× die Startkarte, Meer, Flüsse, Gebirge',w:256,h:208,water:'mixed',rocks:210,ridges:13,big:true,huge:true},
+  {id:'gletscher',name:'Gletscherpass',desc:'Schnee, Bergwälle mit engen Pässen, Eisseen',w:112,h:100,water:'lakes',layout:'walls',theme:'snow',rocks:22,neu:true},
+  {id:'fjord',name:'Fjordland',desc:'Schnee, Fjorde zwingen auf Umwege, schmale Furten',w:128,h:116,water:'fjords',layout:'fjords',theme:'snow',rocks:26,neu:true},
+  {id:'inseln',name:'Inselbrücken',desc:'Inseln, nur schmale Dämme verbinden sie',w:112,h:112,water:'islands',layout:'islands',rocks:18,neu:true},
 ];
+// weather (storms) and day/night: off by default, they made the game hard to read
+let WX=false;try{WX=localStorage.getItem('wzc-wx')==='on'}catch(e){}
+const SNOW=()=>MAP&&MAP.theme==='snow';
+let CAUSE=[];
 
 // ---------- sound (Web Audio, generated, no files) ----------
 const SND={ctx:null,on:true,out:null,noise:null,last:{},amb:null,ambF:null};
@@ -607,11 +617,44 @@ function genMap(def,seed){
         if(Math.abs(y-(y0+y1)/2)<2.5||Math.abs(y-y0-(y1-y0)*.2)<2||Math.abs(y-y0-(y1-y0)*.8)<2)continue;
         for(let x=Math.floor(xc-3);x<=xc+3;x++)if(inB(x,y)&&Math.abs(x+.5-xc)<wd)water[y*MW+x]=1}
     }
+    // hand-shaped layouts with choke points: wall = protected rock, keep = corridor that random rocks never block
+    const wall=new Uint8Array(N),keep=new Uint8Array(N);CAUSE=[];
+    const disc=(cx,cy,r,f)=>{for(let y=Math.floor(cy-r-1);y<=cy+r+1;y++)for(let x=Math.floor(cx-r-1);x<=cx+r+1;x++)if(inB(x,y)&&Math.hypot(x+.5-cx,y+.5-cy)<r)f(y*MW+x)};
+    const line=(x0,y0,x1,y1,r,f)=>{const n=Math.ceil(Math.hypot(x1-x0,y1-y0)*2)+1;for(let k=0;k<=n;k++){const t=k/n;disc(x0+(x1-x0)*t,y0+(y1-y0)*t,r,f)}};
+    if(def.layout==='walls'){
+      // two mountain walls across the map, passes staggered so armies must zig-zag
+      const rows=[[.34,[.13,.62]],[.66,[.38,.87]]];
+      for(const[fy,gaps]of rows){const pp=rng()*6;
+        for(let x=0;x<MW;x++){const yc=MH*fy+Math.sin(x*.13+pp)*2.2,th=2.6+Math.sin(x*.31+pp)*.6,gap=gaps.some(g=>Math.abs(x-MW*g)<3.2);
+          for(let y=Math.floor(yc-th-1);y<=yc+th+1;y++){if(!inB(x,y))continue;const i=y*MW+x;if(Math.abs(y+.5-yc)<th){if(gap)keep[i]=1;else wall[i]=1}}}
+        for(const g of gaps)disc(MW*g,MH*fy,5,i=>keep[i]=1)}
+      // frozen-edge lakes in the middle band, between the passes
+      for(const fx of[.25,.75])disc(MW*fx+(rng()-.5)*4,MH*.5,6.5+rng()*1.5,i=>{if(!keep[i])water[i]=1});
+          }else if(def.layout==='fjords'){
+      // fjords alternately from the left and right coast: the land forms a long serpentine
+      const fj=[[.3,0],[.5,1],[.7,0]];
+      for(const[fy,side]of fj){const pp=rng()*6,end=MW*.74,ford=MW*(.34+rng()*.12);
+        for(let k=0;k<end;k++){const x=side?MW-1-k:k,yc=MH*fy+Math.sin(k*.09+pp)*3,wd=3.4-Math.max(0,k-end+10)*.25;
+          const atFord=Math.abs(k-ford)<1.6;
+          for(let y=Math.floor(yc-wd-1);y<=yc+wd+1;y++){if(!inB(x,y))continue;const i=y*MW+x;if(Math.abs(y+.5-yc)<wd){if(atFord)keep[i]=1;else water[i]=1}}}}
+    }else if(def.layout==='islands'){
+      water.fill(1);
+      const C=[MW/2,MH/2];disc(C[0],C[1],15,i=>water[i]=0);
+      const all=[[8,8],[MW-9,MH-9],[MW-9,8],[8,MH-9],[Math.round(MW/2),8],[Math.round(MW/2),MH-9]];
+      for(const[x,y]of all)disc(x+Math.sign(C[0]-x)*2,y+Math.sign(C[1]-y)*2,14+rng()*2,i=>water[i]=0);
+      // causeways: every island to the centre, plus two outer links
+      const cw=(a,b,r)=>{CAUSE.push([a[0],a[1],b[0],b[1]]);line(a[0],a[1],b[0],b[1],r,i=>{water[i]=0;keep[i]=1})};
+      for(const a of all)cw(a,C,1.6);
+      cw(all[0],all[4],1.3);cw(all[1],all[5],1.3);
+      // small extra islets with ore
+      for(let k=0;k<6;k++){const a=rng()*6.28,r=MW*.3;disc(C[0]+Math.cos(a)*r,C[1]+Math.sin(a)*r,4+rng()*2,i=>water[i]=0)}
+    }
+    for(let i=0;i<N;i++)if(wall[i]){rock[i]=1;water[i]=0}
     const nC=def.rocks+(rng()*8|0);
     for(let i=0;i<nC;i++){
       const cx=rng()*MW, cy=rng()*MH, r=1+rng()*2.8;
       for(let y=Math.floor(cy-r-1);y<=cy+r+1;y++)for(let x=Math.floor(cx-r-1);x<=cx+r+1;x++){
-        if(!inB(x,y))continue;const d=Math.hypot(x-cx,y-cy)+(rng()-.5)*1.2;if(d<r&&!water[y*MW+x])rock[y*MW+x]=1;
+        if(!inB(x,y))continue;const d=Math.hypot(x-cx,y-cy)+(rng()-.5)*1.2;if(d<r&&!water[y*MW+x]&&!keep[y*MW+x])rock[y*MW+x]=1;
       }
     }
     // mountain ridges with passes
@@ -630,6 +673,7 @@ function genMap(def,seed){
         if(d+(rng()-.5)*1.4<r){ore[i]=220+(rng()*300|0);gem[i]=gm}
       }
     }
+    for(let i=0;i<N;i++)if(wall[i]){rock[i]=1;ore[i]=0;gem[i]=0}
     for(const[sx,sy]of STARTS)for(let y=sy-7;y<=sy+7;y++)for(let x=sx-7;x<=sx+7;x++){if(!inB(x,y))continue;const i=y*MW+x;rock[i]=0;ore[i]=0;water[i]=0}
     const seen=new Uint8Array(N),st=[STARTS[0][1]*MW+STARTS[0][0]];seen[st[0]]=1;
     while(st.length){const i=st.pop(),x=i%MW,y=(i/MW)|0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(!inB(nx,ny))continue;const j=ny*MW+nx;if(!rock[j]&&!water[j]&&!seen[j]){seen[j]=1;st.push(j)}}}
@@ -649,7 +693,7 @@ function placeOil(seen){
 }
 function drawMapPreview(cv){
   const c=cv.getContext('2d');cv.width=MW;cv.height=MH;const im=c.createImageData(MW,MH),a=im.data;
-  for(let i=0;i<N;i++){let r=150,g=124,b=86;if(water[i]){r=30;g=86;b=104}else if(rock[i]){r=82;g=66;b=50}else if(ore[i]){if(gem[i]){r=180;g=90;b=230}else{r=40;g=200;b=170}}else if(oil[i]){r=10;g=10;b=10}a[i*4]=r;a[i*4+1]=g;a[i*4+2]=b;a[i*4+3]=255}
+  const sn=SNOW();for(let i=0;i<N;i++){let r=150,g=124,b=86;if(sn){r=222;g=228;b=236}if(water[i]){r=24;g=96;b=150}else if(rock[i]){r=sn?92:82;g=sn?98:66;b=sn?108:50}else if(ore[i]){if(gem[i]){r=180;g=90;b=230}else{r=40;g=200;b=170}}else if(oil[i]){r=10;g=10;b=10}a[i*4]=r;a[i*4+1]=g;a[i*4+2]=b;a[i*4+3]=255}
   c.putImageData(im,0,0);
   STARTS.forEach(([x,y],k)=>{c.fillStyle=k?'#fff':TC[0].main;const s=MW>150?5:3;c.fillRect(x-s/2,y-s/2,s,s)});
 }
@@ -667,7 +711,7 @@ function buildTerrain(){
   for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
     const n=vn(x,y),j=(rng()-.5)*6,i=y*MW+x,bb=bio(x,y);let r=150+n*28+j,g=124+n*22+j,b=84+n*14+j;
     if(bb>.35){r-=22*(bb-.35)*2;g-=2*(bb-.35);b-=14*(bb-.35)*2}else if(bb<-.4){r+=10;g-=10;b-=12}
-    if(water[i]){r=74+n*10;g=66+n*10;b=50+n*8}else if(nearW(x,y)){r*=.72;g*=.74;b*=.66}
+    if(water[i]){r=20+n*10;g=62+n*12;b=96+n*14}else if(nearW(x,y)){r*=.8;g*=.8;b*=.76}
     c.fillStyle=`rgb(${r|0},${g|0},${b|0})`;c.fillRect(x*T,y*T,T,T);
   }
   const A=N/3072;
@@ -692,6 +736,22 @@ function buildTerrain(){
   for(let k=1;k<STARTS.length;k++){const[a,b]=STARTS[0],[x,y]=STARTS[k];const qx=(a+x)/2*T+(rng()-.5)*300,qy=(b+y)/2*T+(rng()-.5)*300;
     c.strokeStyle='rgba(95,75,50,.2)';c.lineWidth=22;c.beginPath();c.moveTo(a*T,b*T);c.quadraticCurveTo(qx,qy,x*T,y*T);c.stroke();
     c.strokeStyle='rgba(60,45,30,.18)';c.lineWidth=2;for(const o of[-6,6]){c.beginPath();c.moveTo(a*T+o,b*T+o);c.quadraticCurveTo(qx+o,qy+o,x*T+o,y*T+o);c.stroke()}}
+  // snow maps: same ground detail, turned into snow (grey-white, slightly blue)
+  if(SNOW()){c.save();c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='saturation';c.fillStyle='rgb(128,128,128)';c.fillRect(0,0,terrain.width,terrain.height);
+    c.globalCompositeOperation='screen';c.fillStyle='rgb(92,98,112)';c.fillRect(0,0,terrain.width,terrain.height);c.restore()}
+  // water drawn last and crisp: deep blue, lighter shallows, bright shore line so land and water never blur together
+  const isW=(x,y)=>inB(x,y)&&water[y*MW+x]===1;
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){if(!isW(x,y))continue;let sh=0;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const a=x+dx,b=y+dy;if(inB(a,b)&&!water[b*MW+a])sh=Math.max(sh,3-Math.max(Math.abs(dx),Math.abs(dy)))}
+    const n=vn(x,y)*10;c.fillStyle=sh>=2?`rgb(${44+n|0},${120+n|0},${150+n|0})`:sh===1?`rgb(${28+n|0},${92+n|0},${132+n|0})`:`rgb(${16+n|0},${58+n|0},${98+n|0})`;c.fillRect(x*T,y*T,T,T)}
+  const sn=SNOW();
+  // causeways get a gravel road so the narrow paths read as roads
+  for(const[x0,y0,x1,y1]of CAUSE){c.lineCap='round';c.strokeStyle='rgb(118,100,74)';c.lineWidth=T*2.3;c.beginPath();c.moveTo((x0+.5)*T,(y0+.5)*T);c.lineTo((x1+.5)*T,(y1+.5)*T);c.stroke();
+    c.strokeStyle='rgba(70,56,40,.5)';c.lineWidth=2;c.setLineDash([10,8]);c.stroke();c.setLineDash([])}
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){if(!isW(x,y))continue;
+    for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const a=x+dx,b=y+dy;if(!inB(a,b)||water[b*MW+a])continue;
+      const x0=dx>0?(x+1)*T:dx<0?x*T:x*T,y0=dy>0?(y+1)*T:dy<0?y*T:y*T,hor=dy!==0;
+      c.fillStyle=sn?'rgba(245,250,255,.95)':'rgba(214,196,150,.95)';if(hor)c.fillRect(x0,y0-(dy>0?0:T*.22),T,T*.22);else c.fillRect(x0-(dx>0?0:T*.22),y0,T*.22,T);
+      c.fillStyle='rgba(230,245,255,.75)';if(hor)c.fillRect(x0,dy>0?y0-T*.07:y0,T,T*.07);else c.fillRect(dx>0?x0-T*.07:x0,y0,T*.07,T)}}
 }
 // ---------- entities ----------
 let nextId=1;
@@ -1372,7 +1432,7 @@ function update(dt){
   if(G.buildings.some(b=>b.dead))G.buildings=G.buildings.filter(b=>!b.dead);
   // weather: sandstorms
   const S=G.storm;
-  if(G.time>=S.next&&S.until<G.time){S.until=G.time+45;S.next=S.until+320+Math.random()*260;forHum(h=>{tT(h,'toast','Sandsturm zieht auf! Sichtweite stark reduziert.',true);tT(h,'sfx','storm');tT(h,'say','storm');tT(h,'amb',.22)})}
+  if(WX&&G.time>=S.next&&S.until<G.time){S.until=G.time+45;S.next=S.until+320+Math.random()*260;const sn=SNOW();forHum(h=>{tT(h,'toast',sn?'Schneesturm zieht auf! Sichtweite stark reduziert.':'Sandsturm zieht auf! Sichtweite stark reduziert.',true);tT(h,'sfx','storm');if(!sn)tT(h,'say','storm');tT(h,'amb',.22)})}
   if(S.until&&G.time>S.until&&!S.calm){S.calm=1;forHum(h=>{tT(h,'amb',.05);tT(h,'toast','Der Sandsturm legt sich.')})}
   if(G.time<S.until)S.calm=0;
   G.fogT-=dt;if(G.fogT<=0){G.fogT=.2;updateFog()}
@@ -2027,12 +2087,12 @@ function build3D(){
   const tg=new THREE.PlaneGeometry(MW,MH,MW,MH);tg.rotateX(-Math.PI/2);tg.translate(MW/2,0,MH/2);
   const p=tg.attributes.position;for(let k=0;k<p.count;k++){p.setY(k,hAt(p.getX(k),p.getZ(k)))}tg.computeVertexNormals();
   const tex=new THREE.CanvasTexture(terrain);tex.encoding=THREE.sRGBEncoding;tex.anisotropy=Math.min(8,R.renderer.capabilities.getMaxAnisotropy());
-  const tmat=fogify(new THREE.MeshStandardMaterial({map:tex,color:'#ddd3c4',roughness:.96,metalness:0}),true);
-  const ter=new THREE.Mesh(tg,tmat);ter.receiveShadow=true;R.world.add(ter);R.terrain=ter;terrain=null;
-  const sk=new THREE.Mesh(new THREE.PlaneGeometry(900,900),fogify(new THREE.MeshStandardMaterial({color:'#7a6446',roughness:1})));sk.rotation.x=-Math.PI/2;sk.position.set(MW/2,-.2,MH/2);R.world.add(sk);
+  const sn=SNOW();const tmat=fogify(new THREE.MeshStandardMaterial({map:tex,color:sn?'#c4ccd6':'#ddd3c4',roughness:sn?.9:.96,metalness:0}),true);
+  R.hemi.groundColor.set(sn?'#8a95a3':'#4a3524');const ter=new THREE.Mesh(tg,tmat);ter.receiveShadow=true;R.world.add(ter);R.terrain=ter;terrain=null;
+  const sk=new THREE.Mesh(new THREE.PlaneGeometry(900,900),fogify(new THREE.MeshStandardMaterial({color:sn?'#b9c3ce':'#7a6446',roughness:1})));sk.rotation.x=-Math.PI/2;sk.position.set(MW/2,-.2,MH/2);R.world.add(sk);
   R.water=null;
   if(hasWater){R.waterN=R.waterN||waterNormalTex();R.waterN.repeat.set(MW/5,MH/5);
-    R.waterMat=fogify(new THREE.MeshStandardMaterial({color:'#1b5866',roughness:.12,metalness:.25,transparent:true,opacity:.84,normalMap:R.waterN,normalScale:new THREE.Vector2(.55,.55)}));
+    R.waterMat=fogify(new THREE.MeshStandardMaterial({color:sn?'#2a7fb0':'#1f78a8',roughness:.28,metalness:.15,transparent:true,opacity:.62,normalMap:R.waterN,normalScale:new THREE.Vector2(.3,.3)}));
     const wg=new THREE.PlaneGeometry(MW,MH);wg.rotateX(-Math.PI/2);const wm=new THREE.Mesh(wg,R.waterMat);wm.position.set(MW/2,-.16,MH/2);wm.receiveShadow=true;wm.renderOrder=2;R.world.add(wm);R.water=wm}
   // rocks and ruins
   const rocks=[],ruins=[];for(let i=0;i<N;i++)if(rock[i]){if(hash(i,99)<.06)ruins.push(i);else rocks.push(i)}
@@ -2042,7 +2102,7 @@ function build3D(){
   const o=new THREE.Object3D(),c=new THREE.Color();let n=0;
   for(const i of rocks){const x=i%MW,z=(i/MW)|0;for(let k=0;k<per;k++){const s=(.55+hash(i,k)*.5)*(big?1.15:1);o.position.set(x+.2+hash(i,k+3)*.6,hAt(x+.5,z+.5)-.12,z+.2+hash(i,k+6)*.6);
     o.rotation.set(hash(i,k+9)*3,hash(i,k+12)*6,hash(i,k+15)*3);o.scale.set(s*1.25,s*(.7+hash(i,k+18)*.9),s*1.25);o.updateMatrix();
-    const v=.75+hash(i,k+21)*.35;c.setRGB(.13*v,.1*v,.072*v);ciAdd(rim,x,z,o.matrix,c);n++}}
+    const v=.75+hash(i,k+21)*.35;if(sn)c.setRGB(.34*v,.36*v,.4*v);else c.setRGB(.13*v,.1*v,.072*v);ciAdd(rim,x,z,o.matrix,c);n++}}
   ciBuild(rim);
   const rug=new THREE.BoxGeometry(1,1,1),ruim=mkCI(rug,R.mats.ruin,true,true);let nr=0;
   for(const i of ruins){const x=i%MW,z=(i/MW)|0;for(let k=0;k<3;k++){const hh=.2+hash(i,k+60)*.7;o.position.set(x+.2+hash(i,k+61)*.6,hAt(x+.5,z+.5)+hh/2-.05,z+.2+hash(i,k+62)*.6);o.rotation.set((hash(i,k+63)-.5)*.3,hash(i,k+64)*3,(hash(i,k+65)-.5)*.3);o.scale.set(.15+hash(i,k+66)*.4,hh,.12);o.updateMatrix();
@@ -2053,8 +2113,15 @@ function build3D(){
     let nr2=0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const a=x+dx,b=y+dy;if(inB(a,b)&&(rock[b*MW+a]||water[b*MW+a]))nr2++}if((nr2&&hash(i,40)<.45)||hash(i,41)<.025)spots.push(i);else if(hash(i,42)<.012)cacti.push(i)}
   const bg=new THREE.IcosahedronGeometry(.16,0);const bim=mkCI(bg,R.mats.bush,true,false);let nb=0;
   for(const i of spots){const x=i%MW,z=(i/MW)|0;for(let k=0;k<2;k++){const s=.6+hash(i,k+50)*.9;o.position.set(x+hash(i,k+51),hAt(x+.5,z+.5)+.05,z+hash(i,k+52));o.rotation.set(0,hash(i,k+53)*6,0);o.scale.set(s,s*.7,s);o.updateMatrix();
-    const v=.7+hash(i,k+54)*.5;c.setRGB(.33*v,.3*v,.15*v);ciAdd(bim,x,z,o.matrix,c);nb++}}
+    const v=.7+hash(i,k+54)*.5;if(sn)c.setRGB(.42*v,.46*v,.5*v);else c.setRGB(.33*v,.3*v,.15*v);ciAdd(bim,x,z,o.matrix,c);nb++}}
   ciBuild(bim);
+  if(sn){// snow maps: fir trees instead of cacti, in clusters near rocks and scattered
+    if(!R.mats.pine)R.mats.pine=fogify(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.9,flatShading:true}));
+    const tr=new THREE.CylinderGeometry(.04,.05,.18,5);tr.translate(0,.09,0);const c1=new THREE.ConeGeometry(.24,.42,7);c1.translate(0,.36,0);const c2=new THREE.ConeGeometry(.17,.32,7);c2.translate(0,.6,0);
+    const pim=mkCI(mergeG([tr,c1,c2]),R.mats.pine,true,false);
+    for(const i of[...cacti,...spots.filter(i=>hash(i,77)<.5)]){const x=i%MW,z=(i/MW)|0,s=.8+hash(i,70)*.9;o.position.set(x+.2+hash(i,78)*.6,hAt(x+.5,z+.5),z+.2+hash(i,79)*.6);o.rotation.set(0,hash(i,71)*6,0);o.scale.set(s,s*(.9+hash(i,74)*.4),s);o.updateMatrix();
+      const v=.8+hash(i,72)*.3;c.setRGB(.12*v,.24*v,.17*v);ciAdd(pim,x,z,o.matrix,c)}
+    ciBuild(pim);cacti.length=0}
   const cg=new THREE.CylinderGeometry(.06,.07,.5,6);cg.translate(0,.25,0);const arm=new THREE.CylinderGeometry(.04,.045,.22,6);arm.translate(.12,.3,0);
   const cgm=mergeG([cg,arm]);const cim=mkCI(cgm,R.mats.cactus,true,false);let nc=0;
   for(const i of cacti){const x=i%MW,z=(i/MW)|0,s=.7+hash(i,70)*.8;o.position.set(x+.5,hAt(x+.5,z+.5),z+.5);o.rotation.set(0,hash(i,71)*6,0);o.scale.set(s,s,s);o.updateMatrix();c.setRGB(.5+hash(i,72)*.3,.6+hash(i,73)*.2,.45);ciAdd(cim,x,z,o.matrix,c);nc++}
@@ -2139,20 +2206,20 @@ function spawnFx3D(f){
   }
 }
 // day/night + weather lighting
-const SKY_DAY=new THREE.Color('#2a2118'),SKY_NIGHT=new THREE.Color('#05080f'),SKY_DUSK=new THREE.Color('#3a1c10'),SKY_STORM=new THREE.Color('#6a5234');
+const SKY_DAY=new THREE.Color('#2a2118'),SKY_NIGHT=new THREE.Color('#05080f'),SKY_DUSK=new THREE.Color('#3a1c10'),SKY_STORM=new THREE.Color('#6a5234'),SKY_SNOW=new THREE.Color('#56616e'),SKY_BLIZ=new THREE.Color('#9aa6b2');
 function updateLighting(dt){
-  const ph=((G.time/480)+.18)%1,sunUp=Math.sin(ph*Math.PI*2),day=clamp(sunUp*1.8+.35,0,1),dusk=clamp(1-Math.abs(sunUp)*3.2,0,1);
+  const ph=WX?((G.time/480)+.18)%1:.21,sunUp=Math.sin(ph*Math.PI*2),day=clamp(sunUp*1.8+.35,0,1),dusk=WX?clamp(1-Math.abs(sunUp)*3.2,0,1):0;
   const st=G.storm.until>G.time?1:0;R.stormK=(R.stormK||0)+(st-(R.stormK||0))*Math.min(1,dt*.6);const sk=R.stormK;
   R.sunAng=ph*Math.PI*2;
   R.sun.intensity=(.16+1.75*day)*(1-sk*.55);R.sun.color.setRGB(1,.78+.08*day-.25*dusk,.6+.12*day-.35*dusk);
   R.hemi.intensity=(.26+.32*day)*(1+sk*.3);R.hemi.color.setRGB(.75+.25*day,.8+.15*day,.95+.0*day);
-  const c=R.skyC.copy(SKY_NIGHT).lerp(SKY_DAY,day).lerp(SKY_DUSK,dusk*.6).lerp(SKY_STORM,sk*.85);
+  const c=R.skyC.copy(SKY_NIGHT).lerp(SNOW()?SKY_SNOW:SKY_DAY,day).lerp(SKY_DUSK,dusk*.6).lerp(SNOW()?SKY_BLIZ:SKY_STORM,sk*.85);
   R.scene.background.copy(c);R.scene.fog.color.copy(c);
   if(R.outPass)R.outPass.uniforms.grade.value.set(1+.08*dusk-.1*(1-day),1-.02*dusk-.04*(1-day),1-.12*dusk+.12*(1-day));
   R.renderer.toneMappingExposure=.9+.25*(1-day);
   R.night=1-day;
   if(sk>.05&&quality<2){const n=Math.round(dt*90*sk);for(let i=0;i<n;i++){const a=cam.yaw,dx=rnd(-1,1)*cam.z*.9,dz=rnd(-1,1)*cam.z*.6,x=cam.x/T+dx,z=cam.y/T+dz;
-    emit(R.smoke,x,gY(x,z)+rnd(.2,2.5),z,6+rnd(0,3),rnd(-.2,.3),2+rnd(0,2),rnd(1.2,2.2),rnd(.6,1.2),rnd(1.6,3),[.62,.5,.33],[.7,.58,.4],.22*sk,0,1)}}
+    emit(R.smoke,x,gY(x,z)+rnd(.2,2.5),z,6+rnd(0,3),rnd(-.2,.3),2+rnd(0,2),rnd(1.2,2.2),rnd(.6,1.2),rnd(1.6,3),SNOW()?[.9,.93,.97]:[.62,.5,.33],SNOW()?[.95,.97,1]:[.7,.58,.4],.22*sk,0,1)}}
 }
 function render(){
   octx.setTransform(DPR,0,0,DPR,0,0);octx.clearRect(0,0,vw,vh);
@@ -2283,8 +2350,8 @@ let mImg=null;
 function renderMini(){
   if(!G)return;if(!mImg||mImg.width!==MW*2)mImg=mctx.createImageData(MW*2,MH*2);const a=mImg.data,W2=MW*2;
   const put=(tx,ty,r,g,b)=>{for(let oy=0;oy<2;oy++)for(let ox=0;ox<2;ox++){const p=((ty*2+oy)*W2+tx*2+ox)*4;a[p]=r;a[p+1]=g;a[p+2]=b;a[p+3]=255}};
-  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){const i=y*MW+x;if(!explored[i]){if(water[i])put(x,y,6,14,18);else if(rock[i])put(x,y,14,12,10);else put(x,y,24,21,16);continue}
-    let r=126,g=106,b=72;if(water[i]){r=28;g=78;b=96}else if(rock[i]){r=74;g=60;b=46}else if(ore[i]){if(gem[i]){r=170;g=90;b=220}else{r=40;g=190;b=160}}else if(oil[i]){r=15;g=12;b=10}
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){const i=y*MW+x;if(!explored[i]){if(water[i])put(x,y,6,18,30);else if(rock[i])put(x,y,14,12,10);else put(x,y,24,21,16);continue}
+    let r=126,g=106,b=72;if(SNOW()){r=196;g=202;b=212}if(water[i]){r=26;g=100;b=150}else if(rock[i]){r=SNOW()?86:74;g=SNOW()?92:60;b=SNOW()?102:46}else if(ore[i]){if(gem[i]){r=170;g=90;b=220}else{r=40;g=190;b=160}}else if(oil[i]){r=15;g=12;b=10}
     if(!visible[i]){r*=.55;g*=.55;b*=.55}put(x,y,r,g,b)}
   for(const bd of G.buildings){if(!ally(bd.team,ME)&&!bSeen(bd))continue;const c=TC[bd.team].rgb;for(let y=bd.ty;y<bd.ty+bd.h;y++)for(let x=bd.tx;x<bd.tx+bd.w;x++)put(x,y,c[0],c[1],c[2])}
   for(const c of G.crates){if(explored[c.y*MW+c.x]&&(visible[c.y*MW+c.x]||hasR(ME,'sat')))put(c.x,c.y,255,220,60)}
@@ -2984,7 +3051,7 @@ function refreshUI(){
   $('#credits').textContent=Math.floor(tm.credits);
   $('#power').textContent=tm.pprod+'/'+tm.puse;$('#powBar').style.width=(tm.pprod?clamp(tm.puse/tm.pprod,0,1)*100:100)+'%';
   $('#powStat').classList.toggle('low',tm.pprod<tm.puse);
-  const m=Math.floor(G.time/60),s=Math.floor(G.time%60),ph=((G.time/480)+.18)%1,dayNow=Math.sin(ph*Math.PI*2)>-.15;
+  const m=Math.floor(G.time/60),s=Math.floor(G.time%60),ph=((G.time/480)+.18)%1,dayNow=!WX||Math.sin(ph*Math.PI*2)>-.15;
   $('#clock').textContent=(G.storm.until>G.time?'🌪 ':dayNow?'☀ ':'☾ ')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
   const ns=sitesOf(ME).length;$('#sites').textContent=ns+'/'+maxSites(ME);
   for(const[,b]of btnEls){const kind=b.dataset.kind,type=b.dataset.type;const d=kind==='b'?BDEF[type]:kind==='r'?RDEF[type]:UDEF[type];
@@ -3065,13 +3132,14 @@ const vbtn=$('#voiceBtn');const setVoiceUI=()=>{vbtn.textContent=VO.on?'Funk an'
 vbtn.onclick=()=>{VO.mode=VO.on?'off':'de';try{localStorage.setItem('wzc-voice',VO.mode)}catch(e){}setVoiceUI();
   if(VO.on){voiceUnlock();VO.last=0;VO.busyTill=0;const u=G&&(G.sel[0]||G.units.find(x=>x.team===ME&&x.ch));if(u)say('select',u);else say('ready');if(!CLIP.meta)voiceTip(true)}else{clipStop();if(window.speechSynthesis)speechSynthesis.cancel()}};
 // start screen
-let diffKey='normal',foeN=2,mapI=4;const mapSeeds=MAPS.map(()=>(Math.random()*1e9)|0);
+let diffKey='normal',foeN=2,mapI=6;const mapSeeds=MAPS.map(()=>(Math.random()*1e9)|0);
 function buildMapCards(){const el=$('#mapSel');el.innerHTML='';
   MAPS.forEach((m,i)=>{genMap(m,mapSeeds[i]);const b=document.createElement('button');b.type='button';b.className='map'+(m.big?' big':'');b.setAttribute('aria-pressed',i===mapI);
-    const cv=document.createElement('canvas');drawMapPreview(cv);b.appendChild(cv);b.insertAdjacentHTML('beforeend',`<b>${m.name}${m.huge?' <em>NEU</em>':''}</b><span>${m.desc} · ${m.w}×${m.h}</span>`);
+    const cv=document.createElement('canvas');drawMapPreview(cv);b.appendChild(cv);b.insertAdjacentHTML('beforeend',`<b>${m.name}${m.neu?' <em>NEU</em>':''}</b><span>${m.desc} · ${m.w}×${m.h}</span>`);
     b.onclick=()=>{mapI=i;el.querySelectorAll('.map').forEach((x,k)=>x.setAttribute('aria-pressed',k===i))};el.appendChild(b)})}
 buildMapCards();
 document.querySelectorAll('#diffSeg button').forEach(b=>b.onclick=()=>{diffKey=b.dataset.d;document.querySelectorAll('#diffSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b))});
+document.querySelectorAll('#wxSeg button').forEach(b=>{b.setAttribute('aria-pressed',(b.dataset.w==='on')===WX);b.onclick=()=>{WX=b.dataset.w==='on';try{localStorage.setItem('wzc-wx',WX?'on':'off')}catch(e){}document.querySelectorAll('#wxSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b))}});
 document.querySelectorAll('#foeSeg button').forEach(b=>b.onclick=()=>{foeN=+b.dataset.n;document.querySelectorAll('#foeSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b))});
 $('#startBtn').onclick=()=>{audioInit();voiceUnlock();if(netStartClick())return;const b=$('#startBtn');b.textContent='Karte wird erzeugt …';b.disabled=true;
   setTimeout(()=>{newGame({map:mapI,seed:mapSeeds[mapI],foes:foeN,dk:diffKey});b.textContent='Einsatz starten';b.disabled=false},30)};
@@ -3102,7 +3170,7 @@ function frame(now){
 netInit();
 resize();
 requestAnimationFrame(frame);
-window.__wzc={get G(){return G},CLIP,playClip,say,NET,act,get ME(){return ME},get R(){return R},VO,newGame,update,canPlace,addBuilding,placeSite,queueUnit,queueResearch,groupMove,spawnUnit,orbitStrike,empBlast,cancelSite,tryBuild,placeAt,
+window.__wzc={get G(){return G},genMap,MAPS,get rock(){return rock},get water(){return water},get STARTS(){return STARTS},get explored(){return explored},get visible(){return visible},get MW(){return MW},get MH(){return MH},CLIP,playClip,say,NET,act,get ME(){return ME},get R(){return R},VO,newGame,update,canPlace,addBuilding,placeSite,queueUnit,queueResearch,groupMove,spawnUnit,orbitStrike,empBlast,cancelSite,tryBuild,placeAt,
   cam:(x,y,z,yaw)=>{cam.x=x;cam.y=y;cam.z=z;cam.yaw=yaw},get camNow(){return{...cam}},ts:(x,y,h)=>toScreen(x,y,h),get water(){return water},get oil(){return oil},get MW(){return MW},get MH(){return MH},say,setTab,tap:(x,y)=>tap(x,y),get INTRO(){return INTRO},endIntro:()=>endIntro()};
 // ---------- cinematic intro: story briefing with narrator, camera flight, orbital strike, title ----------
 const OPS=['Stahlregen','Nachtfalke','Donnerkeil','Glutwind','Eisenwolke','Morgengrauen','Sandsturm','Kupferhimmel'];
