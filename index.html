@@ -464,11 +464,16 @@ const MAPS=[
   {id:'gletscher',name:'Gletscherpass',desc:'Schnee, Bergwälle mit engen Pässen, Eisseen',w:112,h:100,water:'lakes',layout:'walls',theme:'snow',rocks:22,neu:true},
   {id:'fjord',name:'Fjordland',desc:'Schnee, Fjorde zwingen auf Umwege, schmale Furten',w:128,h:116,water:'fjords',layout:'fjords',theme:'snow',rocks:26,neu:true},
   {id:'inseln',name:'Inselbrücken',desc:'Inseln, nur schmale Dämme verbinden sie',w:112,h:112,water:'islands',layout:'islands',rocks:18,neu:true},
+  {id:'erzland',name:'Erzreich',desc:'Sehr viel Erz und Ölfelder, Tafelberge, viele Wege und Ausbauplätze',w:144,h:120,water:'ponds',layout:'mesas',rocks:14,oreMul:3,oreRich:1.6,gemP:.5,oilMul:1.8,homeOre:2,neu:true},
+  {id:'gebirge',name:'Hochgebirge',desc:'Gebirge überall, Kämpfe in den Tälern',w:144,h:128,water:'valleys',layout:'valleys',theme:'alpine',rocks:6,neu:true},
+  {id:'stadt',name:'Ruinenstadt',desc:'Strassennetz zwischen zerstörten Häuserblocks',w:128,h:112,water:'none',layout:'roads',rocks:0,neu:true},
+  {id:'tropen',name:'Tropeninseln',desc:'Grüne Inseln, Palmen, Sandbänke als Übergänge',w:128,h:112,water:'tropic',layout:'tropic',theme:'tropic',rocks:10,neu:true},
 ];
 // weather (storms) and day/night: off by default, they made the game hard to read
 let WX=false;try{WX=localStorage.getItem('wzc-wx')==='on'}catch(e){}
 const SNOW=()=>MAP&&MAP.theme==='snow';
-let CAUSE=[];
+const THEME=()=>MAP&&MAP.theme||'desert';
+let CAUSE=[],ROADS=[],BARS=[];
 
 // ---------- sound (Web Audio, generated, no files) ----------
 const SND={ctx:null,on:true,out:null,noise:null,last:{},amb:null,ambF:null};
@@ -618,7 +623,7 @@ function genMap(def,seed){
         for(let x=Math.floor(xc-3);x<=xc+3;x++)if(inB(x,y)&&Math.abs(x+.5-xc)<wd)water[y*MW+x]=1}
     }
     // hand-shaped layouts with choke points: wall = protected rock, keep = corridor that random rocks never block
-    const wall=new Uint8Array(N),keep=new Uint8Array(N);CAUSE=[];
+    const wall=new Uint8Array(N),keep=new Uint8Array(N);CAUSE=[];ROADS=[];BARS=[];
     const disc=(cx,cy,r,f)=>{for(let y=Math.floor(cy-r-1);y<=cy+r+1;y++)for(let x=Math.floor(cx-r-1);x<=cx+r+1;x++)if(inB(x,y)&&Math.hypot(x+.5-cx,y+.5-cy)<r)f(y*MW+x)};
     const line=(x0,y0,x1,y1,r,f)=>{const n=Math.ceil(Math.hypot(x1-x0,y1-y0)*2)+1;for(let k=0;k<=n;k++){const t=k/n;disc(x0+(x1-x0)*t,y0+(y1-y0)*t,r,f)}};
     if(def.layout==='walls'){
@@ -648,6 +653,48 @@ function genMap(def,seed){
       cw(all[0],all[4],1.3);cw(all[1],all[5],1.3);
       // small extra islets with ore
       for(let k=0;k<6;k++){const a=rng()*6.28,r=MW*.3;disc(C[0]+Math.cos(a)*r,C[1]+Math.sin(a)*r,4+rng()*2,i=>water[i]=0)}
+    }else if(def.layout==='mesas'){
+      // table mountains spread over the map: many lanes between them, no single front line
+      const pts=[];for(let k=0;k<60&&pts.length<13;k++){const x=14+rng()*(MW-28),y=14+rng()*(MH-28);
+        if(STARTS.some(([a,b])=>Math.hypot(a-x,b-y)<20)||pts.some(([a,b])=>Math.hypot(a-x,b-y)<19))continue;pts.push([x,y])}
+      for(const[x,y]of pts){const r=4+rng()*3.5,e=.6+rng()*.6,a0=rng()*6;
+        for(let yy=Math.floor(y-r*1.6);yy<=y+r*1.6;yy++)for(let xx=Math.floor(x-r*1.6);xx<=x+r*1.6;xx++){if(!inB(xx,yy))continue;const dx=xx+.5-x,dy=yy+.5-y,an=Math.atan2(dy,dx);
+          const rr2=r*(1+.25*Math.sin(3*an+a0))*(Math.abs(Math.cos(an))*(1-e)+e);if(Math.hypot(dx,dy)<rr2)wall[yy*MW+xx]=1}}
+      // a few ponds in open ground
+      for(let k=0;k<4;k++){const x=16+rng()*(MW-32),y=16+rng()*(MH-32);if(STARTS.some(([a,b])=>Math.hypot(a-x,b-y)<18))continue;disc(x,y,3+rng()*2.5,i=>{if(!wall[i])water[i]=1})}
+    }else if(def.layout==='valleys'){
+      // solid mountains, then valleys carved between the bases, a ring and a central basin; a creek runs in some valleys
+      wall.fill(1);const C=[MW/2,MH/2],all=[[8,8],[MW-9,MH-9],[MW-9,8],[8,MH-9],[Math.round(MW/2),8],[Math.round(MW/2),MH-9]];
+      const nodes=[[MW*.27,MH*.3],[MW*.73,MH*.3],[MW*.27,MH*.7],[MW*.73,MH*.7]];
+      const valley=(a,b,r)=>{let px=a[0],py=a[1];const n=6;for(let k=1;k<=n;k++){const t=k/n,j=k<n?(rng()-.5)*9:0;const qx=a[0]+(b[0]-a[0])*t+j*(b[1]-a[1])/(Math.hypot(b[0]-a[0],b[1]-a[1])||1),qy=a[1]+(b[1]-a[1])*t-j*(b[0]-a[0])/(Math.hypot(b[0]-a[0],b[1]-a[1])||1);
+        line(px,py,qx,qy,r+rng()*1.2,i=>{wall[i]=0;keep[i]=1});px=qx;py=qy}};
+      for(const a of all){disc(a[0]+Math.sign(C[0]-a[0])*2,a[1]+Math.sign(C[1]-a[1])*2,11,i=>{wall[i]=0;keep[i]=1});let best=nodes[0];for(const n of nodes)if(Math.hypot(n[0]-a[0],n[1]-a[1])<Math.hypot(best[0]-a[0],best[1]-a[1]))best=n;valley(a,best,3)}
+      for(let k=0;k<4;k++)valley(nodes[k],nodes[[1,3,0,2][k]],2.6);for(const n of nodes){disc(n[0],n[1],6,i=>{wall[i]=0;keep[i]=1});valley(n,C,2.2)}
+      disc(C[0],C[1],10,i=>{wall[i]=0;keep[i]=1});
+      // small side basins (expansions) branching off
+      for(let k=0;k<6;k++){const n=nodes[k%4],a=rng()*6.28,d=13+rng()*5,b=[clamp(n[0]+Math.cos(a)*d,8,MW-8),clamp(n[1]+Math.sin(a)*d,8,MH-8)];valley(n,b,2);disc(b[0],b[1],4.5,i=>{wall[i]=0})}
+      // creek with fords through the central basin
+      for(let x=Math.floor(C[0]-9);x<=C[0]+9;x++){const yc=C[1]+Math.sin(x*.4)*1.5;if(Math.abs(x-C[0])<1.6)continue;for(let y=Math.floor(yc-1);y<=yc+1;y++)if(inB(x,y)&&Math.abs(y+.5-yc)<1.1&&!wall[y*MW+x])water[y*MW+x]=1}
+    }else if(def.layout==='roads'){
+      // a ruined city: a street grid between rubble blocks, wide avenues, a few open squares
+      const sp=13,sw=2.2;const ox=(MW%sp)/2,oy=(MH%sp)/2;
+      for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){const gx=(x+.5-ox)%sp,gy=(y+.5-oy)%sp;if(gx>sw*2&&gy>sw*2&&x>2&&y>2&&x<MW-3&&y<MH-3)wall[y*MW+x]=1}
+      for(let gx=0;gx*sp<MW;gx++)ROADS.push([ox+gx*sp+sw,0,ox+gx*sp+sw,MH,1]);for(let gy=0;gy*sp<MH;gy++)ROADS.push([0,oy+gy*sp+sw,MW,oy+gy*sp+sw,1]);
+      // squares (some blocks fully open) and collapsed side streets (some blocks split)
+      const bx=Math.floor(MW/sp),by=Math.floor(MH/sp);
+      for(let k=0;k<Math.round(bx*by*.22);k++){const i=(rng()*bx)|0,j=(rng()*by)|0;const x0=ox+i*sp,y0=oy+j*sp;for(let y=y0;y<y0+sp;y++)for(let x=x0;x<x0+sp;x++)if(inB(x,y))wall[y*MW+x]=0}
+      for(let k=0;k<Math.round(bx*by*.25);k++){const i=(rng()*bx)|0,j=(rng()*by)|0,x0=ox+i*sp,y0=oy+j*sp,h=rng()<.5;for(let t=0;t<sp;t++)for(let w=-1;w<=0;w++){const x=h?x0+t:x0+sp/2+w|0,y=h?y0+sp/2+w|0:y0+t;if(inB(x,y))wall[y*MW+x]=0}}
+      // a river with bridges along one avenue
+      const ry=Math.floor(oy+Math.round(by/2)*sp+sw*2+1);for(let x=0;x<MW;x++){if(Math.abs(((x+.5-ox)%sp)-sw)<sw+.2)continue;for(let y=ry;y<ry+3;y++)if(inB(x,y)){water[y*MW+x]=1;wall[y*MW+x]=0}}
+    }else if(def.layout==='tropic'){
+      // archipelago: noisy islands around the bases and in between, linked by sandbars
+      water.fill(1);const C=[MW/2,MH/2],all=[[8,8],[MW-9,MH-9],[MW-9,8],[8,MH-9],[Math.round(MW/2),8],[Math.round(MW/2),MH-9]];
+      const isl=(cx,cy,r)=>{const a0=rng()*6,a1=rng()*6;disc(cx,cy,r*1.35,i=>{const x=i%MW,y=(i/MW)|0,an=Math.atan2(y-cy,x-cx);if(Math.hypot(x+.5-cx,y+.5-cy)<r*(1+.18*Math.sin(3*an+a0)+.1*Math.sin(5*an+a1)))water[i]=0})};
+      for(const a of all)isl(a[0]+Math.sign(C[0]-a[0])*3,a[1]+Math.sign(C[1]-a[1])*3,13);
+      isl(C[0],C[1],12);const mid=[[MW*.3,MH*.5],[MW*.7,MH*.5],[MW*.5,MH*.28],[MW*.5,MH*.72]];for(const m of mid)isl(m[0],m[1],6+rng()*2);
+      const bar=(a,b)=>{BARS.push([a[0],a[1],b[0],b[1]]);line(a[0],a[1],b[0],b[1],1.5,i=>{water[i]=0;keep[i]=1})};
+      bar(all[0],mid[0]);bar(all[3],mid[0]);bar(all[2],mid[1]);bar(all[1],mid[1]);bar(all[4],mid[2]);bar(all[5],mid[3]);for(const m of mid)bar(m,C);
+      for(let k=0;k<7;k++){const x=10+rng()*(MW-20),y=10+rng()*(MH-20);if(all.some(([a,b])=>Math.hypot(a-x,b-y)<20))continue;isl(x,y,3+rng()*2.5)}
     }
     for(let i=0;i<N;i++)if(wall[i]){rock[i]=1;water[i]=0}
     const nC=def.rocks+(rng()*8|0);
@@ -663,14 +710,17 @@ function genMap(def,seed){
         for(let yy=Math.floor(y-r);yy<=y+r;yy++)for(let xx=Math.floor(x-r);xx<=x+r;xx++)if(inB(xx,yy)&&!water[yy*MW+xx]&&Math.hypot(xx-x,yy-y)<r)rock[yy*MW+xx]=1}}
     // ore: one field per start (towards centre) + extra fields; some far fields are rare earth (worth more)
     const fields=[];
-    for(const[sx,sy]of STARTS){const dx=MW/2-sx,dy=MH/2-sy,d=Math.hypot(dx,dy)||1;fields.push([sx+dx/d*11+(rng()-.5)*3,sy+dy/d*11+(rng()-.5)*3,3.1,0])}
-    const extra=Math.round(N/1100)+2;
-    for(let i=0;i<extra;i++){for(let k=0;k<20;k++){const x=6+rng()*(MW-12),y=6+rng()*(MH-12);if(water[(y|0)*MW+(x|0)])continue;const md=Math.min(...STARTS.map(([a,b])=>Math.hypot(a-x,b-y)));if(md<14)continue;fields.push([x,y,2.6+rng()*1.6,md>26&&rng()<.35?1:0]);break}}
+    for(const[sx,sy]of STARTS){const dx=MW/2-sx,dy=MH/2-sy,d=Math.hypot(dx,dy)||1;fields.push([sx+dx/d*11+(rng()-.5)*3,sy+dy/d*11+(rng()-.5)*3,3.1,0]);
+      if(def.homeOre){const a=Math.atan2(dy,dx)+(rng()<.5?1:-1)*1.1;fields.push([sx+Math.cos(a)*11,sy+Math.sin(a)*11,2.8,0])}}
+    const extra=Math.round((Math.round(N/1100)+2)*(def.oreMul||1));
+    for(let i=0;i<extra;i++){for(let k=0;k<20;k++){const x=6+rng()*(MW-12),y=6+rng()*(MH-12);if(water[(y|0)*MW+(x|0)]||wall[(y|0)*MW+(x|0)])continue;const md=Math.min(...STARTS.map(([a,b])=>Math.hypot(a-x,b-y)));if(md<14)continue;
+      if(def.oreMul&&fields.some(([a,b])=>Math.hypot(a-x,b-y)<7))continue;fields.push([x,y,2.6+rng()*1.6,md>26&&rng()<(def.gemP||.35)?1:0]);break}}
+    const oreA=def.oreRich||1;
     for(const[ox,oy,r,gm]of fields){
       for(let y=Math.floor(oy-r-3);y<=oy+r+3;y++)for(let x=Math.floor(ox-r-3);x<=ox+r+3;x++){
         if(!inB(x,y))continue;const i=y*MW+x,d=Math.hypot(x-ox,y-oy);if(water[i])continue;
         if(d<r+2.5)rock[i]=0;
-        if(d+(rng()-.5)*1.4<r){ore[i]=220+(rng()*300|0);gem[i]=gm}
+        if(d+(rng()-.5)*1.4<r){ore[i]=Math.min(65000,(220+(rng()*300|0))*oreA|0);gem[i]=gm}
       }
     }
     for(let i=0;i<N;i++)if(wall[i]){rock[i]=1;ore[i]=0;gem[i]=0}
@@ -688,12 +738,12 @@ function placeOil(seen){
     for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++)if(inB(x+dx,y+dy)&&oil[(y+dy)*MW+x+dx])return false;return true};
   const put=(x,y)=>{for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)rock[(y+dy)*MW+x+dx]=0;oil[y*MW+x]=1};
   for(const[sx,sy]of STARTS){for(let k=0;k<30;k++){const a=rng()*6.28,r=9+rng()*3,x=Math.round(sx+Math.cos(a)*r),y=Math.round(sy+Math.sin(a)*r);if(ok(x,y)){put(x,y);break}}}
-  const n=Math.round(N/800);
+  const n=Math.round(N/800*(MAP.oilMul||1));
   for(let i=0;i<n;i++)for(let k=0;k<20;k++){const x=3+(rng()*(MW-6))|0,y=3+(rng()*(MH-6))|0;if(STARTS.some(([a,b])=>Math.hypot(a-x,b-y)<9))continue;if(ok(x,y)){put(x,y);break}}
 }
 function drawMapPreview(cv){
   const c=cv.getContext('2d');cv.width=MW;cv.height=MH;const im=c.createImageData(MW,MH),a=im.data;
-  const sn=SNOW();for(let i=0;i<N;i++){let r=150,g=124,b=86;if(sn){r=222;g=228;b=236}if(water[i]){r=24;g=96;b=150}else if(rock[i]){r=sn?92:82;g=sn?98:66;b=sn?108:50}else if(ore[i]){if(gem[i]){r=180;g=90;b=230}else{r=40;g=200;b=170}}else if(oil[i]){r=10;g=10;b=10}a[i*4]=r;a[i*4+1]=g;a[i*4+2]=b;a[i*4+3]=255}
+  const sn=SNOW(),th=THEME();for(let i=0;i<N;i++){let r=150,g=124,b=86;if(sn){r=222;g=228;b=236}else if(th==='alpine'){r=96;g=130;b=70}else if(th==='tropic'){r=90;g=160;b=70}if(water[i]){r=24;g=96;b=150}else if(rock[i]){r=sn?92:82;g=sn?98:66;b=sn?108:50}else if(ore[i]){if(gem[i]){r=180;g=90;b=230}else{r=40;g=200;b=170}}else if(oil[i]){r=10;g=10;b=10}a[i*4]=r;a[i*4+1]=g;a[i*4+2]=b;a[i*4+3]=255}
   c.putImageData(im,0,0);
   STARTS.forEach(([x,y],k)=>{c.fillStyle=k?'#fff':TC[0].main;const s=MW>150?5:3;c.fillRect(x-s/2,y-s/2,s,s)});
 }
@@ -737,12 +787,18 @@ function buildTerrain(){
     c.strokeStyle='rgba(95,75,50,.2)';c.lineWidth=22;c.beginPath();c.moveTo(a*T,b*T);c.quadraticCurveTo(qx,qy,x*T,y*T);c.stroke();
     c.strokeStyle='rgba(60,45,30,.18)';c.lineWidth=2;for(const o of[-6,6]){c.beginPath();c.moveTo(a*T+o,b*T+o);c.quadraticCurveTo(qx+o,qy+o,x*T+o,y*T+o);c.stroke()}}
   // snow maps: same ground detail, turned into snow (grey-white, slightly blue)
+  if(THEME()==='alpine'||THEME()==='tropic'){const tp=THEME()==='tropic';c.save();c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='hue';c.fillStyle=tp?'rgb(70,160,40)':'rgb(90,140,60)';c.fillRect(0,0,terrain.width,terrain.height);
+    c.globalCompositeOperation='saturation';c.fillStyle=tp?'rgb(110,150,80)':'rgb(105,125,90)';c.fillRect(0,0,terrain.width,terrain.height);c.restore()}
+  // city streets (asphalt with lane marks) and sandbars
+  for(const[x0,y0,x1,y1]of ROADS){c.lineCap='butt';c.strokeStyle='rgb(58,56,54)';c.lineWidth=T*3.6;c.beginPath();c.moveTo(x0*T,y0*T);c.lineTo(x1*T,y1*T);c.stroke();
+    c.strokeStyle='rgba(230,200,90,.55)';c.lineWidth=3;c.setLineDash([22,18]);c.stroke();c.setLineDash([])}
+  for(const[x0,y0,x1,y1]of BARS){c.lineCap='round';c.strokeStyle='rgb(222,204,160)';c.lineWidth=T*2.6;c.beginPath();c.moveTo((x0+.5)*T,(y0+.5)*T);c.lineTo((x1+.5)*T,(y1+.5)*T);c.stroke()}
   if(SNOW()){c.save();c.setTransform(1,0,0,1,0,0);c.globalCompositeOperation='saturation';c.fillStyle='rgb(128,128,128)';c.fillRect(0,0,terrain.width,terrain.height);
     c.globalCompositeOperation='screen';c.fillStyle='rgb(92,98,112)';c.fillRect(0,0,terrain.width,terrain.height);c.restore()}
   // water drawn last and crisp: deep blue, lighter shallows, bright shore line so land and water never blur together
   const isW=(x,y)=>inB(x,y)&&water[y*MW+x]===1;
   for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){if(!isW(x,y))continue;let sh=0;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const a=x+dx,b=y+dy;if(inB(a,b)&&!water[b*MW+a])sh=Math.max(sh,3-Math.max(Math.abs(dx),Math.abs(dy)))}
-    const n=vn(x,y)*10;c.fillStyle=sh>=2?`rgb(${44+n|0},${120+n|0},${150+n|0})`:sh===1?`rgb(${28+n|0},${92+n|0},${132+n|0})`:`rgb(${16+n|0},${58+n|0},${98+n|0})`;c.fillRect(x*T,y*T,T,T)}
+    const n=vn(x,y)*10;if(THEME()==='tropic'){c.fillStyle=sh>=2?`rgb(${60+n|0},${200+n|0},${200+n|0})`:sh===1?`rgb(${30+n|0},${160+n|0},${180+n|0})`:`rgb(${14+n|0},${92+n|0},${140+n|0})`;c.fillRect(x*T,y*T,T,T);continue}c.fillStyle=sh>=2?`rgb(${44+n|0},${120+n|0},${150+n|0})`:sh===1?`rgb(${28+n|0},${92+n|0},${132+n|0})`:`rgb(${16+n|0},${58+n|0},${98+n|0})`;c.fillRect(x*T,y*T,T,T)}
   const sn=SNOW();
   // causeways get a gravel road so the narrow paths read as roads
   for(const[x0,y0,x1,y1]of CAUSE){c.lineCap='round';c.strokeStyle='rgb(118,100,74)';c.lineWidth=T*2.3;c.beginPath();c.moveTo((x0+.5)*T,(y0+.5)*T);c.lineTo((x1+.5)*T,(y1+.5)*T);c.stroke();
@@ -2082,40 +2138,47 @@ function build3D(){
   for(let j=0;j<=MH;j++)for(let i=0;i<=MW;i++){
     let h=(Math.sin(i*.23+ph)*Math.cos(j*.19+ph2)+.6*Math.sin(i*.11+j*.13+ph2))*.22+(MAP.big?Math.sin(i*.04+ph2)*Math.cos(j*.035+ph)*.25:0);
     let rk=0,wc=0;for(const[a,b]of[[i,j],[i-1,j],[i,j-1],[i-1,j-1]]){if(inB(a,b)){if(rock[b*MW+a])rk++;if(water[b*MW+a])wc++}}
-    h+=rk*.14;h*=clamp((zoneD(i,j)-.5)/3,0,1);if(wc)h=h*(1-wc/4)-.75*wc/4;HGT[j*(MW+1)+i]=h;
+    h+=rk*(MAP.layout==='roads'?0:MAP.layout==='valleys'?.3:.14);h*=clamp((zoneD(i,j)-.5)/3,0,1);if(wc)h=h*(1-wc/4)-.75*wc/4;HGT[j*(MW+1)+i]=h;
   }
   const tg=new THREE.PlaneGeometry(MW,MH,MW,MH);tg.rotateX(-Math.PI/2);tg.translate(MW/2,0,MH/2);
   const p=tg.attributes.position;for(let k=0;k<p.count;k++){p.setY(k,hAt(p.getX(k),p.getZ(k)))}tg.computeVertexNormals();
   const tex=new THREE.CanvasTexture(terrain);tex.encoding=THREE.sRGBEncoding;tex.anisotropy=Math.min(8,R.renderer.capabilities.getMaxAnisotropy());
-  const sn=SNOW();const tmat=fogify(new THREE.MeshStandardMaterial({map:tex,color:sn?'#c4ccd6':'#ddd3c4',roughness:sn?.9:.96,metalness:0}),true);
-  R.hemi.groundColor.set(sn?'#8a95a3':'#4a3524');const ter=new THREE.Mesh(tg,tmat);ter.receiveShadow=true;R.world.add(ter);R.terrain=ter;terrain=null;
-  const sk=new THREE.Mesh(new THREE.PlaneGeometry(900,900),fogify(new THREE.MeshStandardMaterial({color:sn?'#b9c3ce':'#7a6446',roughness:1})));sk.rotation.x=-Math.PI/2;sk.position.set(MW/2,-.2,MH/2);R.world.add(sk);
+  const sn=SNOW(),th=THEME(),pineT=sn||th==='alpine',city=MAP.layout==='roads';const tmat=fogify(new THREE.MeshStandardMaterial({map:tex,color:sn?'#c4ccd6':'#ddd3c4',roughness:sn?.9:.96,metalness:0}),true);
+  R.hemi.groundColor.set(sn?'#8a95a3':th==='desert'?'#4a3524':'#3f5a30');const ter=new THREE.Mesh(tg,tmat);ter.receiveShadow=true;R.world.add(ter);R.terrain=ter;terrain=null;
+  const sk=new THREE.Mesh(new THREE.PlaneGeometry(900,900),fogify(new THREE.MeshStandardMaterial({color:sn?'#b9c3ce':th==='desert'?'#7a6446':'#4d6a3c',roughness:1})));sk.rotation.x=-Math.PI/2;sk.position.set(MW/2,-.2,MH/2);R.world.add(sk);
   R.water=null;
   if(hasWater){R.waterN=R.waterN||waterNormalTex();R.waterN.repeat.set(MW/5,MH/5);
-    R.waterMat=fogify(new THREE.MeshStandardMaterial({color:sn?'#2a7fb0':'#1f78a8',roughness:.28,metalness:.15,transparent:true,opacity:.62,normalMap:R.waterN,normalScale:new THREE.Vector2(.3,.3)}));
+    R.waterMat=fogify(new THREE.MeshStandardMaterial({color:th==='tropic'?'#1fb0bf':sn?'#2a7fb0':'#1f78a8',roughness:.28,metalness:.15,transparent:true,opacity:.62,normalMap:R.waterN,normalScale:new THREE.Vector2(.3,.3)}));
     const wg=new THREE.PlaneGeometry(MW,MH);wg.rotateX(-Math.PI/2);const wm=new THREE.Mesh(wg,R.waterMat);wm.position.set(MW/2,-.16,MH/2);wm.receiveShadow=true;wm.renderOrder=2;R.world.add(wm);R.water=wm}
   // rocks and ruins
-  const rocks=[],ruins=[];for(let i=0;i<N;i++)if(rock[i]){if(hash(i,99)<.06)ruins.push(i);else rocks.push(i)}
+  const rocks=[],ruins=[];for(let i=0;i<N;i++)if(rock[i]){if(city||hash(i,99)<.06)ruins.push(i);else rocks.push(i)}
   const big=N>12000,per=big?2:3;
   const rg=new THREE.IcosahedronGeometry(.5,big?0:1);const rp=rg.attributes.position;for(let k=0;k<rp.count;k++){const s=.82+hash(k,3)*.36;rp.setXYZ(k,rp.getX(k)*s,rp.getY(k)*s,rp.getZ(k)*s)}rg.computeVertexNormals();
   const rim=mkCI(rg,R.mats.rock,true,true);
   const o=new THREE.Object3D(),c=new THREE.Color();let n=0;
   for(const i of rocks){const x=i%MW,z=(i/MW)|0;for(let k=0;k<per;k++){const s=(.55+hash(i,k)*.5)*(big?1.15:1);o.position.set(x+.2+hash(i,k+3)*.6,hAt(x+.5,z+.5)-.12,z+.2+hash(i,k+6)*.6);
     o.rotation.set(hash(i,k+9)*3,hash(i,k+12)*6,hash(i,k+15)*3);o.scale.set(s*1.25,s*(.7+hash(i,k+18)*.9),s*1.25);o.updateMatrix();
-    const v=.75+hash(i,k+21)*.35;if(sn)c.setRGB(.34*v,.36*v,.4*v);else c.setRGB(.13*v,.1*v,.072*v);ciAdd(rim,x,z,o.matrix,c);n++}}
+    const v=.75+hash(i,k+21)*.35;if(pineT)c.setRGB(.34*v,.36*v,.4*v);else if(th==='tropic')c.setRGB(.2*v,.18*v,.14*v);else c.setRGB(.13*v,.1*v,.072*v);ciAdd(rim,x,z,o.matrix,c);n++}}
   ciBuild(rim);
   const rug=new THREE.BoxGeometry(1,1,1),ruim=mkCI(rug,R.mats.ruin,true,true);let nr=0;
-  for(const i of ruins){const x=i%MW,z=(i/MW)|0;for(let k=0;k<3;k++){const hh=.2+hash(i,k+60)*.7;o.position.set(x+.2+hash(i,k+61)*.6,hAt(x+.5,z+.5)+hh/2-.05,z+.2+hash(i,k+62)*.6);o.rotation.set((hash(i,k+63)-.5)*.3,hash(i,k+64)*3,(hash(i,k+65)-.5)*.3);o.scale.set(.15+hash(i,k+66)*.4,hh,.12);o.updateMatrix();
-    const v=.7+hash(i,k+67)*.4;c.setRGB(.26*v,.25*v,.22*v);ciAdd(ruim,x,z,o.matrix,c);nr++}}
+  for(const i of ruins){const x=i%MW,z=(i/MW)|0;for(let k=0;k<(city?2:3);k++){const hh=city?.3+hash(i,k+60)*hash(i,k+90)*2.2:.2+hash(i,k+60)*.7;o.position.set(x+.2+hash(i,k+61)*.6,hAt(x+.5,z+.5)+hh/2-.05,z+.2+hash(i,k+62)*.6);o.rotation.set((hash(i,k+63)-.5)*.3,hash(i,k+64)*3,(hash(i,k+65)-.5)*.3);o.scale.set(city?.4+hash(i,k+66)*.5:.15+hash(i,k+66)*.4,hh,city?.3+hash(i,k+68)*.5:.12);o.updateMatrix();
+    const v=.7+hash(i,k+67)*.4;if(city)c.setRGB(.62*v,.6*v,.56*v);else c.setRGB(.26*v,.25*v,.22*v);ciAdd(ruim,x,z,o.matrix,c);nr++}}
   ciBuild(ruim);
   // scrub, cacti, dead trees
   const spots=[],cacti=[];for(let i=0;i<N;i++){if(rock[i]||water[i]||ore[i]||oil[i])continue;const x=i%MW,y=(i/MW)|0;if(G.teams.some(t=>Math.abs(t.start[0]-x)<8&&Math.abs(t.start[1]-y)<8))continue;
     let nr2=0;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const a=x+dx,b=y+dy;if(inB(a,b)&&(rock[b*MW+a]||water[b*MW+a]))nr2++}if((nr2&&hash(i,40)<.45)||hash(i,41)<.025)spots.push(i);else if(hash(i,42)<.012)cacti.push(i)}
   const bg=new THREE.IcosahedronGeometry(.16,0);const bim=mkCI(bg,R.mats.bush,true,false);let nb=0;
   for(const i of spots){const x=i%MW,z=(i/MW)|0;for(let k=0;k<2;k++){const s=.6+hash(i,k+50)*.9;o.position.set(x+hash(i,k+51),hAt(x+.5,z+.5)+.05,z+hash(i,k+52));o.rotation.set(0,hash(i,k+53)*6,0);o.scale.set(s,s*.7,s);o.updateMatrix();
-    const v=.7+hash(i,k+54)*.5;if(sn)c.setRGB(.42*v,.46*v,.5*v);else c.setRGB(.33*v,.3*v,.15*v);ciAdd(bim,x,z,o.matrix,c);nb++}}
+    const v=.7+hash(i,k+54)*.5;if(sn)c.setRGB(.42*v,.46*v,.5*v);else if(th!=='desert')c.setRGB(.16*v,.32*v,.12*v);else c.setRGB(.33*v,.3*v,.15*v);ciAdd(bim,x,z,o.matrix,c);nb++}}
   ciBuild(bim);
-  if(sn){// snow maps: fir trees instead of cacti, in clusters near rocks and scattered
+  if(th==='tropic'){// palms: curved trunk + drooping leaf fan
+    if(!R.mats.pine)R.mats.pine=fogify(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.9,flatShading:true}));
+    const tr=new THREE.CylinderGeometry(.035,.055,.7,5);tr.translate(0,.35,0);tr.rotateZ(.12);const lf=new THREE.ConeGeometry(.42,.16,7,1,true);lf.rotateX(Math.PI);lf.translate(.04,.72,0);const lf2=new THREE.ConeGeometry(.3,.12,6);lf2.translate(.04,.76,0);
+    const pam=mkCI(mergeG([tr,lf,lf2]),R.mats.pine,true,false);
+    for(const i of[...cacti,...spots.filter(i=>hash(i,77)<.4)]){const x=i%MW,z=(i/MW)|0,s=.8+hash(i,70)*.7;o.position.set(x+.2+hash(i,78)*.6,hAt(x+.5,z+.5),z+.2+hash(i,79)*.6);o.rotation.set(0,hash(i,71)*6,0);o.scale.set(s,s*(.9+hash(i,74)*.5),s);o.updateMatrix();
+      const v=.8+hash(i,72)*.3;c.setRGB(.2*v,.42*v,.16*v);ciAdd(pam,x,z,o.matrix,c)}
+    ciBuild(pam);cacti.length=0}
+  if(pineT){// snow/alpine maps: fir trees instead of cacti, in clusters near rocks and scattered
     if(!R.mats.pine)R.mats.pine=fogify(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.9,flatShading:true}));
     const tr=new THREE.CylinderGeometry(.04,.05,.18,5);tr.translate(0,.09,0);const c1=new THREE.ConeGeometry(.24,.42,7);c1.translate(0,.36,0);const c2=new THREE.ConeGeometry(.17,.32,7);c2.translate(0,.6,0);
     const pim=mkCI(mergeG([tr,c1,c2]),R.mats.pine,true,false);
@@ -2351,7 +2414,7 @@ function renderMini(){
   if(!G)return;if(!mImg||mImg.width!==MW*2)mImg=mctx.createImageData(MW*2,MH*2);const a=mImg.data,W2=MW*2;
   const put=(tx,ty,r,g,b)=>{for(let oy=0;oy<2;oy++)for(let ox=0;ox<2;ox++){const p=((ty*2+oy)*W2+tx*2+ox)*4;a[p]=r;a[p+1]=g;a[p+2]=b;a[p+3]=255}};
   for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){const i=y*MW+x;if(!explored[i]){if(water[i])put(x,y,6,18,30);else if(rock[i])put(x,y,14,12,10);else put(x,y,24,21,16);continue}
-    let r=126,g=106,b=72;if(SNOW()){r=196;g=202;b=212}if(water[i]){r=26;g=100;b=150}else if(rock[i]){r=SNOW()?86:74;g=SNOW()?92:60;b=SNOW()?102:46}else if(ore[i]){if(gem[i]){r=170;g=90;b=220}else{r=40;g=190;b=160}}else if(oil[i]){r=15;g=12;b=10}
+    let r=126,g=106,b=72;if(SNOW()){r=196;g=202;b=212}else if(THEME()!=='desert'){r=78;g=118;b=60}if(water[i]){r=26;g=100;b=150}else if(rock[i]){r=SNOW()?86:74;g=SNOW()?92:60;b=SNOW()?102:46}else if(ore[i]){if(gem[i]){r=170;g=90;b=220}else{r=40;g=190;b=160}}else if(oil[i]){r=15;g=12;b=10}
     if(!visible[i]){r*=.55;g*=.55;b*=.55}put(x,y,r,g,b)}
   for(const bd of G.buildings){if(!ally(bd.team,ME)&&!bSeen(bd))continue;const c=TC[bd.team].rgb;for(let y=bd.ty;y<bd.ty+bd.h;y++)for(let x=bd.tx;x<bd.tx+bd.w;x++)put(x,y,c[0],c[1],c[2])}
   for(const c of G.crates){if(explored[c.y*MW+c.x]&&(visible[c.y*MW+c.x]||hasR(ME,'sat')))put(c.x,c.y,255,220,60)}
