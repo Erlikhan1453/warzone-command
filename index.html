@@ -81,6 +81,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #toast{position:absolute;left:50%;top:44px;transform:translateX(-50%);max-width:min(92%,440px);text-align:center;pointer-events:none;z-index:5;
   background:#0b0e0de6;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;padding:7px 12px;font-size:12.5px;line-height:1.35}
 #toast.bad{border-left-color:var(--bad)}
+.flash{animation:flashBad .7s ease-out}
+@keyframes flashBad{0%,40%{box-shadow:0 0 0 2px var(--bad);background-color:#5a1d17}100%{box-shadow:none}}
 #placebar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:#0b0e0de6;border:1px solid var(--accent);border-radius:6px;padding:6px 6px 6px 12px;font-size:12.5px;max-width:calc(100% - 20px)}
 @media (orientation:landscape){#placebar{left:auto;right:10px;transform:none}}
 #placebar button{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 10px;font-size:12px}
@@ -1193,7 +1195,7 @@ function cancelSite(b){if(!b||b.dead||b.done)return;const tm=G.teams[b.team];tm.
   tT(b.team,'toast','Bau abgebrochen: '+b.d.name+'. '+b.d.cost+' Credits erstattet.');tT(b.team,'sfx','cancel');refreshUI(true)}
 function queueUnit(team,type){
   const tm=G.teams[team],d=UDEF[type];
-  if(!unitReady(team,d))return false;const q=tm.uq[d.from];if(q.length>=9)return false;
+  if(!unitReady(team,d))return false;const q=tm.uq[d.from];if(q.length>=9+3*(Math.min(MAXPAR,bOf(team,d.from).length)-1))return false;
   if(tm.credits<d.cost){tT(team,'toast','Nicht genug Credits.',true);return false}
   tm.credits-=d.cost;q.push({type,prog:0});return true;
 }
@@ -1221,11 +1223,14 @@ function updateResearch(tm,dt){
   if(tm.rq.prog>=1){const k=tm.rq.key;tm.res[k]=true;tm.rq=null;applyResearch(tm.id,k);
     if(tm.human){tT(tm.id,'toast','Forschung abgeschlossen: '+RDEF[k].name);tT(tm.id,'sfx','research');tT(tm.id,'say','research');tT(tm.id,'bb')}}
 }
+const MAXPAR=5;
 function updateProduction(tm,dt){
   const pm=(tm.pprod>=tm.puse?1:.45)*(!tm.human?G.diff.aiSpeed:1);
   for(const kind of PRODS){const q=tm.uq[kind];if(!q.length)continue;const ps=bOf(tm.id,kind).filter(b=>!(b.stunT>G.time));if(!ps.length)continue;
-    const it=q[0];if(!reqMet(tm.id,UDEF[it.type]))continue;it.prog+=dt*pm/UDEF[it.type].time;
-    if(it.prog>=1){q.shift();const b=ps[tm.rot[kind]++%ps.length];const u=spawnFrom(b,it.type);
+    // two factories = two units at once, three = three ... (up to MAXPAR)
+    const par=Math.min(ps.length,MAXPAR);
+    for(let i=0;i<Math.min(par,q.length);i++){const it=q[i];if(!reqMet(tm.id,UDEF[it.type]))continue;it.prog+=dt*pm/UDEF[it.type].time}
+    for(let i=0;i<Math.min(par,q.length);i++){const it=q[i];if(it.prog<1)continue;q.splice(i,1);i--;const b=ps[tm.rot[kind]++%ps.length];const u=spawnFrom(b,it.type);
       if(it.type==='drone'&&hasR(tm.id,'schwarm'))spawnFrom(b,'drone');
       if(tm.human&&u){tT(tm.id,'toast',UDEF[it.type].name+' bereit.');tT(tm.id,'sfx',UDEF[it.type].nav==='sea'?'horn':'ready');tT(tm.id,'say','ready',u)}}}
 }
@@ -2440,7 +2445,7 @@ function resize(){const r=view.getBoundingClientRect();vw=Math.max(1,r.width);vh
 window.addEventListener('resize',()=>{resize();refreshUI(true)});
 
 // ---------- input ----------
-let gesture=null;const pts=new Map();let lastTap={t:0,id:-1};let boxMode=false;let camVel=null;const LONGP=450;
+let gesture=null;const pts=new Map();let lastTap={t:0,id:-1},lastGround={t:0};let boxMode=false;let camVel=null;const LONGP=450;
 const toWorld=(sx,sy)=>groundAt(sx,sy)||{x:cam.x,y:cam.y};
 const local=e=>{const r=view.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}};
 function grabPan(g,p,soft){updateCamera();const now=groundAt(p.x,p.y);if(!now||!g)return;const dx=now.x-g.x,dy=now.y-g.y;cam.x-=dx;cam.y-=dy;clampCam(soft);updateCamera();
@@ -2449,7 +2454,9 @@ view.addEventListener('pointerdown',e=>{
   if(!G||G.over)return;try{view.setPointerCapture(e.pointerId)}catch(_){}const p=local(e);pts.set(e.pointerId,p);camVel=null;G.touch=e.pointerType!=='mouse';
   if(pts.size===2){zAnim=null;const[a,b]=[...pts.values()];const m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};gesture={type:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,z0:cam.z,a0:Math.atan2(b.y-a.y,b.x-a.x),yaw0:cam.yaw,rot:false,g:toWorld(m.x,m.y)}}
   else if(pts.size===1&&G.placing&&G.ghost&&e.pointerType!=='mouse'&&onGhost(p)){const g=groundAt(p.x,p.y);gesture={type:'ghost',x0:p.x,y0:p.y,p,dx:g.x/T-G.ghost.tx,dy:g.y/T-G.ghost.ty,moved:false}}
-  else if(pts.size===1)gesture={type:'pending',x0:p.x,y0:p.y,x1:p.x,y1:p.y,btn:e.button,pt:e.pointerType,shift:e.shiftKey,g:toWorld(p.x,p.y),yaw0:cam.yaw,t0:performance.now()};
+  else if(pts.size===1){const gs={type:'pending',x0:p.x,y0:p.y,x1:p.x,y1:p.y,btn:e.button,pt:e.pointerType,shift:e.shiftKey,g:toWorld(p.x,p.y),yaw0:cam.yaw,t0:performance.now()};gesture=gs;
+    // touch: holding still shows a ring, so the player knows the long press counts
+    if(e.pointerType!=='mouse')setTimeout(()=>{if(gesture===gs&&gs.type==='pending'&&G&&!G.placing&&!G.target){gs.held=true;fxL('ping',gs.g.x,gs.g.y,{life:.5,r:18,col:'#f2a93b'});try{if(navigator.vibrate)navigator.vibrate(8)}catch(_){}}},LONGP)}
 });
 view.addEventListener('pointermove',e=>{
   const p=local(e);if(e.pointerType==='mouse'&&G){G.mouse=p}
@@ -2474,7 +2481,7 @@ function endPtr(e){
   if(gesture.type==='pinch'){const m=gesture.m||p;if(pts.size===0){gesture=null;springZoom(m.x,m.y)}else if(pts.size===1){const[q]=[...pts.values()];springZoom(q.x,q.y);gesture={type:'pan',g:toWorld(q.x,q.y),lt:performance.now(),vx:0,vy:0}}else gesture={type:'none'};return}
   if(gesture.type==='ghost'){if(!gesture.moved&&e.type!=='pointercancel')confirmPlace();gesture=null;return}
   if(e.type==='pointercancel'){gesture=null;return}
-  if(gesture.type==='pending'){if(gesture.btn===2)rightClick(p.x,p.y);else tap(p.x,p.y,gesture.shift)}
+  if(gesture.type==='pending'){if(gesture.btn===2)rightClick(p.x,p.y);else if(gesture.held&&gesture.pt!=='mouse')longPress(p.x,p.y);else tap(p.x,p.y,gesture.shift)}
   else if(gesture.type==='box'){boxSelect(gesture)}
   else if(gesture.type==='pan'&&pts.size===0&&performance.now()-(gesture.lt||0)<120){const sp=Math.hypot(gesture.vx||0,gesture.vy||0);if(sp>40)camVel={x:gesture.vx,y:gesture.vy}}
   if(pts.size===0)gesture=null;
@@ -2524,7 +2531,7 @@ function rightClick(sx,sy){if(G.target){G.target=null;refreshUI(true);return}if(
   if(G.sel.length){tap(sx,sy,false,true);return}G.sel=[];G.selB=null;refreshUI(true)}
 function unitAtScreen(sx,sy,mine){let best=null,bd=1e9;
   for(const u of G.units){if(mine?u.team!==ME:ally(u.team,ME))continue;if(!mine&&!isVis(u))continue;const p=toScreen(u.x,u.y,gY(u.x/T,u.y/T)+.2+airAlt(u));if(!p.ok)continue;
-    const d=Math.hypot(p.x-sx,p.y-sy),tol=Math.max(G.touch?28:18,u.d.r/T*260/cam.z);if(d<tol&&d<bd){bd=d;best=u}}return best}
+    const d=Math.hypot(p.x-sx,p.y-sy),tol=Math.max(G.touch?36:18,u.d.r/T*260/cam.z);if(d<tol&&d<bd){bd=d;best=u}}return best}
 function buildingAtScreen(sx,sy){
   const nd=new THREE.Vector2(sx/vw*2-1,-(sy/vh)*2+1);R.ray.setFromCamera(nd,R.camera);
   const objs=G.buildings.filter(b=>b.o3&&b.o3.visible).map(b=>b.o3);const hit=R.ray.intersectObjects(objs,true).find(h=>!h.object.isLineSegments&&!(h.object.parent&&h.object.parent.userData&&h.object===h.object.parent.userData.dome));
@@ -2537,7 +2544,7 @@ function tap(sx,sy,shift,cmdOnly){
   const now=performance.now();
   const mu=cmdOnly?null:unitAtScreen(sx,sy,true);
   if(mu&&!G.amMode){
-    if(now-lastTap.t<450&&lastTap.type===mu.type){G.sel=G.units.filter(u=>{if(u.team!==ME||u.type!==mu.type)return false;const p=toScreen(u.x,u.y,0);return p.ok&&p.x>=0&&p.x<=vw&&p.y>=0&&p.y<=vh})}
+    if(now-lastTap.t<450&&lastTap.type===mu.type){G.sel=sameTypeOnScreen(mu.type)}
     else if(shift){G.sel=G.sel.includes(mu)?G.sel.filter(u=>u!==mu):[...G.sel,mu]}
     else G.sel=[mu];
     G.selB=null;lastTap={t:now,type:mu.type};sfx('select',undefined,undefined,sndKind(mu));say('select',mu);refreshUI(true);return}
@@ -2561,8 +2568,14 @@ function tap(sx,sy,shift,cmdOnly){
     act('mv',G.sel.map(u=>u.id),Math.round(wx),Math.round(wy),G.amMode?1:0);
     fxL('ping',wx,wy,{life:.45,r:12,col:G.amMode?'#ef5b4b':undefined});sfx('ack',undefined,undefined,sndKind(G.sel[0]));say(G.amMode?'amove':'move',G.sel[0]);setAm(false);return}
   if(G.selB&&G.selB.team===ME&&PRODS.includes(G.selB.type)&&ti>=0){act('ra',G.selB.id,tx,ty);fxL('ping',wx,wy,{life:.5,r:14,col:'#f2a93b'});sfx('rally');return}
-  if(!cmdOnly){G.selB=null;refreshUI(true)}
+  if(!cmdOnly){if(G.touch&&!G.selB){if(now-(lastGround.t||0)<350&&Math.hypot(sx-lastGround.x,sy-lastGround.y)<40){camVel=null;zoomTo((zAnim?zAnim.z:cam.z)*.62,sx,sy);lastGround={t:0};return}lastGround={t:now,x:sx,y:sy}}G.selB=null;refreshUI(true)}
 }
+function sameTypeOnScreen(t){return G.units.filter(u=>{if(u.team!==ME||u.type!==t)return false;const p=toScreen(u.x,u.y,0);return p.ok&&p.x>=0&&p.x<=vw&&p.y>=0&&p.y<=vh})}
+function longPress(sx,sy){if(G.placing||G.target){tap(sx,sy);return}
+  const mu=unitAtScreen(sx,sy,true);
+  if(mu){G.sel=sameTypeOnScreen(mu.type);G.selB=null;sfx('select',undefined,undefined,sndKind(mu));say('select',mu);refreshUI(true);return}
+  if(G.sel.length&&G.sel.some(u=>u.d.weapon)){G.amMode=true;tap(sx,sy);return}
+  tap(sx,sy)}
 function boxSelect(g){const x0=Math.min(g.x0,g.x1),x1=Math.max(g.x0,g.x1),y0=Math.min(g.y0,g.y1),y1=Math.max(g.y0,g.y1);
   const s=G.units.filter(u=>{if(u.team!==ME)return false;const p=toScreen(u.x,u.y,gY(u.x/T,u.y/T)+.2+airAlt(u));return p.ok&&p.x>=x0&&p.x<=x1&&p.y>=y0&&p.y<=y1});
   const f=s.filter(u=>!u.d.harvester);G.sel=f.length?f:s;G.selB=null;if(G.sel.length){sfx('select',undefined,undefined,sndKind(G.sel[0]));say('select',G.sel[0])}refreshUI(true)}
@@ -3071,6 +3084,7 @@ function say(key,u){
 }
 function radioClick(){if(!SND.ctx||SND.ctx.state!=='running')return;try{noise('bandpass',2800,2600,.06,.07,2);tone('sine',1600,1600,.03,.03,.02)}catch(e){}}
 
+
 // ---------- UI ----------
 let tab='b';const btnEls=new Map();
 const TABS={b:'#tabB',u:'#tabU',a:'#tabA',s:'#tabS',r:'#tabR'};
@@ -3122,7 +3136,7 @@ function refreshUI(){
     let locked=lockText(kind,type),p=null,count=0,ready=false,canX=false;
     if(kind==='b'){const ss=allOf(ME,type).filter(x=>!x.done);count=ss.length;if(count){p=Math.max(...ss.map(x=>x.bp));canX=true}ready=G.placeType===type}
     else if(kind==='r'){if(tm.rq&&tm.rq.key===type){p=tm.rq.prog;canX=true}}
-    else{const q=tm.uq[d.from];count=q.filter(i=>i.type===type).length;if(q.length&&q[0].type===type)p=q[0].prog;else if(count)p=0;canX=count>0}
+    else{const q=tm.uq[d.from];count=q.filter(i=>i.type===type).length;const par=Math.min(MAXPAR,Math.max(1,bOf(ME,d.from).length));let mp=-1;for(let i=0;i<Math.min(par,q.length);i++)if(q[i].type===type&&q[i].prog>mp)mp=q[i].prog;if(mp>=0)p=mp;else if(count)p=0;canX=count>0}
     lock.hidden=!locked;lock.textContent=locked;b.disabled=!!locked;b.classList.toggle('done',locked==='✓ erforscht');
     const busyOther=kind==='r'&&tm.rq&&tm.rq.key!==type;b.style.opacity=busyOther&&!locked?.5:1;
     if(p!==null){prog.hidden=false;prog.style.transform=`scaleY(${1-p})`}else prog.hidden=true;
@@ -3138,20 +3152,18 @@ function refreshUI(){
   const si=$('#selinfo');
   if(G.sel.length){const counts={};G.sel.forEach(u=>counts[u.type]=(counts[u.type]||0)+1);
     const one=G.sel.length===1?G.sel[0]:null;
-    const _t=one?`<div class="t">${one.d.name} <span class="rk">${'★'.repeat(one.rank)}</span>${one.ch?` <span class="who">${one.ch.flag} ${RANKN[one.rank]} ${one.nm}</span>`:''}</div><div class="s">Panzerung ${Math.ceil(one.hp)} / ${Math.round(one.maxHp)}${one.harv?' · Ladung '+one.harv.load+' / '+HCAP:''}${one.kills?' · '+one.kills+' Abschüsse':''}${one.d.engineer?' · Tippe ein feindliches Gebäude zum Erobern oder ein eigenes zum Reparieren':''}${one.d.stealth?' · getarnt, solange es nicht schiesst':''}${one.d.heal?(one.d.heal==='inf'?' · heilt Infanterie in der Nähe':' · repariert Fahrzeuge in der Nähe'):''}</div>`
+    const _t=one?`<div class="t">${one.d.name} <span class="rk">${'★'.repeat(one.rank)}</span>${one.ch?` <span class="who">${one.ch.flag} ${RANKN[one.rank]} ${one.nm}</span>`:''}</div><div class="s">HP ${Math.ceil(one.hp)} / ${Math.round(one.maxHp)}${one.harv?' · Ladung '+one.harv.load+' / '+HCAP:''}${one.kills?' · '+one.kills+' Abschüsse':''}</div>`
       :`<div class="t">${G.sel.length} Einheiten</div><div class="s">${Object.entries(counts).map(([k,v])=>v+'× '+UDEF[k].name).join(', ')}</div>`;
     setSel(si,_t,'<button type="button" id="unselBtn">Abwählen</button>',()=>{$('#unselBtn').onclick=()=>{G.sel=[];sfx('click');refreshUI(true)}})}
   else if(G.selB&&!G.selB.dead){const b=G.selB,mine=b.team===ME,prod=mine&&PRODS.includes(b.type)&&b.done;let extra='',btns='';
     if(!b.done){extra=' · Im Bau '+Math.floor(b.bp*100)+' %';if(mine)btns+=`<button type="button" id="cancelBtn" class="warn">Bau abbrechen (+${b.d.cost})</button>`}
     else{if(b.type==='derrick')extra=' · +'+(b.d.income*(hasR(b.team,'erz')?1.5:1))+' Credits/s';
-      if(b.type==='tech'&&mine)extra=tm.rq?' · Forscht: '+RDEF[tm.rq.key].name+' '+Math.floor(tm.rq.prog*100)+' %':' · Öffne den Reiter „Tech“';
+      if(b.type==='tech'&&mine)extra=tm.rq?' · Forscht: '+RDEF[tm.rq.key].name+' '+Math.floor(tm.rq.prog*100)+' %':'';
+      if(prod){const n=Math.min(MAXPAR,bOf(ME,b.type).filter(x=>!(x.stunT>G.time)).length);if(n>1)extra=' · '+n+'× Tempo'}
       if(b.type==='ion'&&mine)extra=' · Ladung '+Math.floor(tm.pw.ion*100)+' %';
-      if(b.type==='shield')extra=' · halbiert Schaden an Gebäuden im Umkreis';
-      if(b.type==='repair')extra=' · repariert Fahrzeuge in der Nähe gratis';
-      if(prod)extra+=b.rally?' · Sammelpunkt gesetzt':' · Tippe auf die Karte für einen Sammelpunkt';
       if(mine&&b.hp<b.maxHp)btns+=`<button type="button" id="repBtn" aria-pressed="${b.rep}">${b.rep?'Reparatur läuft':'Reparieren'}</button>`;
       if(mine&&b.type!=='hq')btns+=`<button type="button" id="sellBtn">Verkaufen (+${Math.floor(b.d.cost/2)})</button>`}
-    const _t=`<div class="t">${b.d.name}${b.team!==ME?' <span class="s">('+TC[b.team].name+(ally(b.team,ME)?', verbündet':'')+')</span>':''}</div><div class="s">Struktur ${Math.ceil(b.hp)} / ${b.maxHp} · Strom ${b.d.power>0?'+':''}${b.d.power}${extra}</div>`;
+    const _t=`<div class="t">${b.d.name}${b.team!==ME?' <span class="s">('+TC[b.team].name+(ally(b.team,ME)?', verbündet':'')+')</span>':''}</div><div class="s">HP ${Math.ceil(b.hp)} / ${b.maxHp}${extra}</div>`;
     setSel(si,_t,btns+`<button type="button" id="deselBtn">Fertig</button>`,()=>{const sb=$('#sellBtn');if(sb)sb.onclick=()=>{act('sl',b.id);G.selB=null;refreshUI(true)};const cb=$('#cancelBtn');if(cb)cb.onclick=()=>act('cs',b.id);const rb=$('#repBtn');if(rb)rb.onclick=()=>{act('rp',b.id);sfx('click');refreshUI(true)};
     $('#deselBtn').onclick=()=>{G.selB=null;refreshUI(true)}})}
   else{si.hidden=true;si._b=null}
@@ -3161,7 +3173,12 @@ function renderFoes(){const el=$('#foes');if(!G){el.innerHTML='';return}
   const al=G.teams.filter(t=>t.id!==ME&&ally(t.id,ME)),fo=G.teams.filter(t=>!ally(t.id,ME));el.innerHTML=(al.length?lb('Team')+al.map(dot).join(''):'')+lb('Gegner')+fo.map(dot).join('')}
 function sell(b){if(b.dead)return;G.teams[b.team].credits+=Math.floor(b.d.cost/2);removeB(b);fx('ping',b.x,b.y,{life:.6,r:b.w*T*.6,col:'#f2a93b'});tT(b.team,'toast',b.d.name+' verkauft.');tT(b.team,'sfx','sell');refreshUI(true)}
 let toastT=null;
-function toast(msg,bad,ms){const t=$('#toast');t.textContent=msg;t.classList.toggle('bad',!!bad);t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,ms||2800)}
+// in-game info popups are off (player wish): only multiplayer/connection notices still show.
+// Errors give a short red flash on the matching display (credits, power, build bar) instead.
+const TOAST_KEEP=/Mitspieler|verlassen|Gastgeber|Pausiert von|Spieler sind bereit|Karte weicht|Raum|Freund|kopiert|Einladung|3D-Grafik/;
+function flashEl(el){if(!el)return;el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')}
+function toast(msg,bad,ms){if(G&&!G.over&&!TOAST_KEEP.test(msg)){if(bad){if(/Credits/.test(msg))flashEl($('#credits').parentNode);else if(/Strom/.test(msg))flashEl($('#powStat'));else if(G.placing){$('#placeTxt').textContent=msg;flashEl($('#placebar'))}}return}
+  const t=$('#toast');t.textContent=msg;t.classList.toggle('bad',!!bad);t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,ms||2800)}
 function selectAll(){if(!G)return;G.sel=G.units.filter(u=>u.team===ME&&!u.d.harvester);G.selB=null;if(!G.sel.length)toast('Keine Kampfeinheiten vorhanden.');else{sfx('select');say('select',G.sel[G.sel.length-1])}refreshUI(true)}
 function stopSel(){if(!G)return;if(G.sel.length)act('st',G.sel.map(u=>u.id));setAm(false)}
 function goHome(){if(!G)return;const hq=G.buildings.find(b=>b.team===ME&&b.type==='hq')||G.buildings.find(b=>b.team===ME);if(hq)centerOn(hq.x,hq.y)}
