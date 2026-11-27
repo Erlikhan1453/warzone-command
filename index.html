@@ -56,7 +56,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bb .badge{position:absolute;top:5px;right:5px;background:var(--accent);color:var(--accent-ink);font:700 11px var(--mono);border-radius:3px;padding:0 4px;min-width:16px;text-align:center}
 .bb .lock{position:absolute;left:3px;right:3px;top:3px;aspect-ratio:11/8;display:flex;align-items:center;justify-content:center;text-align:center;font-size:9.5px;line-height:1.2;padding:4px;background:#0b0e0dd9;color:var(--muted);border-radius:4px}
 .bb.ready{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset,0 0 12px #f2a93b55}
-.bb.ready .nm::after{content:" · Platzieren";color:var(--accent)}
+#placeTxt{display:none}
+#selinfo>div:empty{display:none}
 .bb .cx{position:absolute;top:3px;left:3px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:#ef5b4bee;color:#fff;font:700 13px var(--body);border-radius:5px;z-index:2;box-shadow:0 1px 4px #0008}
 .bb .ds{font-size:9px;line-height:1.2;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .bb.done .lock{color:var(--ok)}
@@ -2402,12 +2403,11 @@ function render(){
     const p=toScreen(u.x,u.y,gY(u.x/T,u.y/T)+airAlt(u)+(u.d.nav==='sea'?.9:u.type==='titan'?1.2:.75));if(!p.ok)continue;const w=Math.max(16,u.d.r*2);
     if(s||u.hp<u.maxHp&&G.time-u.hitT<4)hpBar2(p.x-w/2,p.y,w,u.hp/u.maxHp);if(u.rank)chevrons(p.x-w/2,p.y-4,u.rank);
     if(u.team!==ME&&(s||G.time-u.hitT<4)){octx.fillStyle=TC[u.team].main;octx.fillRect(p.x+w/2+3,p.y-1,4,5)}}
-  for(const f of G.fx){if(f.type!=='text')continue;const k=f.t/f.life,p=toScreen(f.x,f.y,gY(f.x/T,f.y/T)+1+k*.8);if(!p.ok)continue;
+  if(0)for(const f of G.fx){if(f.type!=='text')continue;const k=f.t/f.life,p=toScreen(f.x,f.y,gY(f.x/T,f.y/T)+1+k*.8);if(!p.ok)continue;
     octx.fillStyle=`rgba(242,169,59,${1-k})`;octx.font='700 13px "JetBrains Mono",monospace';octx.textAlign='center';octx.fillText(f.txt,p.x,p.y)}
   if(gesture&&gesture.type==='box'){const b=gesture;const x=Math.min(b.x0,b.x1),y=Math.min(b.y0,b.y1),w=Math.abs(b.x1-b.x0),h=Math.abs(b.y1-b.y0);octx.fillStyle='rgba(125,255,138,.08)';octx.fillRect(x,y,w,h);octx.strokeStyle='#7dff8a';octx.lineWidth=1;octx.strokeRect(x+.5,y+.5,w,h)}
   if(gesture&&gesture.type==='pending'&&gesture.pt!=='mouse'&&!G.placing&&!G.target){const el=performance.now()-gesture.t0;if(el>110){const k=Math.min(1,(el-110)/(LONGP-110));
-    octx.strokeStyle=k>=1?'#7dff8a':'rgba(125,255,138,.6)';octx.lineWidth=3;octx.beginPath();octx.arc(gesture.x0,gesture.y0,26,-Math.PI/2,-Math.PI/2+k*6.283);octx.stroke();
-    if(k>=1){octx.fillStyle='#7dff8a';octx.font='600 11px system-ui,sans-serif';octx.textAlign='center';octx.fillText('Rahmen ziehen',gesture.x0,gesture.y0-34)}}}
+    octx.strokeStyle=k>=1?'#7dff8a':'rgba(125,255,138,.6)';octx.lineWidth=3;octx.beginPath();octx.arc(gesture.x0,gesture.y0,26,-Math.PI/2,-Math.PI/2+k*6.283);octx.stroke();}}
   if(G.amMode&&G.sel.length){octx.strokeStyle='rgba(239,91,75,.7)';octx.lineWidth=3;octx.strokeRect(1.5,1.5,vw-3,vh-3)}
   if(G.target){octx.strokeStyle=G.target==='ion'?'rgba(255,80,60,.85)':'rgba(120,190,255,.85)';octx.lineWidth=4;octx.strokeRect(2,2,vw-4,vh-4);
     if(G.hover){const r=(G.target==='ion'?3.2:5)*T,p=toScreen(G.hover.x,G.hover.y,gY(G.hover.x/T,G.hover.y/T)),q=toScreen(G.hover.x+r,G.hover.y,gY(G.hover.x/T,G.hover.y/T));
@@ -3137,7 +3137,7 @@ function refreshUI(){
     if(kind==='b'){const ss=allOf(ME,type).filter(x=>!x.done);count=ss.length;if(count){p=Math.max(...ss.map(x=>x.bp));canX=true}ready=G.placeType===type}
     else if(kind==='r'){if(tm.rq&&tm.rq.key===type){p=tm.rq.prog;canX=true}}
     else{const q=tm.uq[d.from];count=q.filter(i=>i.type===type).length;const par=Math.min(MAXPAR,Math.max(1,bOf(ME,d.from).length));let mp=-1;for(let i=0;i<Math.min(par,q.length);i++)if(q[i].type===type&&q[i].prog>mp)mp=q[i].prog;if(mp>=0)p=mp;else if(count)p=0;canX=count>0}
-    lock.hidden=!locked;lock.textContent=locked;b.disabled=!!locked;b.classList.toggle('done',locked==='✓ erforscht');
+    lock.hidden=!locked;lock.textContent=locked==='✓ erforscht'?'✓':'🔒';b.disabled=!!locked;b.classList.toggle('done',locked==='✓ erforscht');
     const busyOther=kind==='r'&&tm.rq&&tm.rq.key!==type;b.style.opacity=busyOther&&!locked?.5:1;
     if(p!==null){prog.hidden=false;prog.style.transform=`scaleY(${1-p})`}else prog.hidden=true;
     b.classList.toggle('ready',ready);cx.hidden=!canX;
@@ -3154,7 +3154,7 @@ function refreshUI(){
     const one=G.sel.length===1?G.sel[0]:null;
     const _t=one?`<div class="t">${one.d.name} <span class="rk">${'★'.repeat(one.rank)}</span>${one.ch?` <span class="who">${one.ch.flag} ${RANKN[one.rank]} ${one.nm}</span>`:''}</div><div class="s">HP ${Math.ceil(one.hp)} / ${Math.round(one.maxHp)}${one.harv?' · Ladung '+one.harv.load+' / '+HCAP:''}${one.kills?' · '+one.kills+' Abschüsse':''}</div>`
       :`<div class="t">${G.sel.length} Einheiten</div><div class="s">${Object.entries(counts).map(([k,v])=>v+'× '+UDEF[k].name).join(', ')}</div>`;
-    setSel(si,_t,'<button type="button" id="unselBtn">Abwählen</button>',()=>{$('#unselBtn').onclick=()=>{G.sel=[];sfx('click');refreshUI(true)}})}
+    setSel(si,'','<button type="button" id="unselBtn">Abwählen</button>',()=>{$('#unselBtn').onclick=()=>{G.sel=[];sfx('click');refreshUI(true)}})}
   else if(G.selB&&!G.selB.dead){const b=G.selB,mine=b.team===ME,prod=mine&&PRODS.includes(b.type)&&b.done;let extra='',btns='';
     if(!b.done){extra=' · Im Bau '+Math.floor(b.bp*100)+' %';if(mine)btns+=`<button type="button" id="cancelBtn" class="warn">Bau abbrechen (+${b.d.cost})</button>`}
     else{if(b.type==='derrick')extra=' · +'+(b.d.income*(hasR(b.team,'erz')?1.5:1))+' Credits/s';
@@ -3164,7 +3164,7 @@ function refreshUI(){
       if(mine&&b.hp<b.maxHp)btns+=`<button type="button" id="repBtn" aria-pressed="${b.rep}">${b.rep?'Reparatur läuft':'Reparieren'}</button>`;
       if(mine&&b.type!=='hq')btns+=`<button type="button" id="sellBtn">Verkaufen (+${Math.floor(b.d.cost/2)})</button>`}
     const _t=`<div class="t">${b.d.name}${b.team!==ME?' <span class="s">('+TC[b.team].name+(ally(b.team,ME)?', verbündet':'')+')</span>':''}</div><div class="s">HP ${Math.ceil(b.hp)} / ${b.maxHp}${extra}</div>`;
-    setSel(si,_t,btns+`<button type="button" id="deselBtn">Fertig</button>`,()=>{const sb=$('#sellBtn');if(sb)sb.onclick=()=>{act('sl',b.id);G.selB=null;refreshUI(true)};const cb=$('#cancelBtn');if(cb)cb.onclick=()=>act('cs',b.id);const rb=$('#repBtn');if(rb)rb.onclick=()=>{act('rp',b.id);sfx('click');refreshUI(true)};
+    setSel(si,'',btns+`<button type="button" id="deselBtn">Fertig</button>`,()=>{const sb=$('#sellBtn');if(sb)sb.onclick=()=>{act('sl',b.id);G.selB=null;refreshUI(true)};const cb=$('#cancelBtn');if(cb)cb.onclick=()=>act('cs',b.id);const rb=$('#repBtn');if(rb)rb.onclick=()=>{act('rp',b.id);sfx('click');refreshUI(true)};
     $('#deselBtn').onclick=()=>{G.selB=null;refreshUI(true)}})}
   else{si.hidden=true;si._b=null}
 }
